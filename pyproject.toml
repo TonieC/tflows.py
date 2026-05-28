@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tflow"
+version = "0.1.0"
+description = "Simple automation and bot framework inspired by aoi.js style syntax"
+authors = [
+  { name="Tonie" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "discord.py"
+]
+
+[tool.setuptools]
+packages = ["tflow"]
