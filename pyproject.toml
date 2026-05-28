@@ -3,12 +3,10 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tflow"
-version = "0.1.0"
+name = "tflows"
+version = "0.0.2"
 description = "Simple automation and bot framework inspired by aoi.js style syntax"
-authors = [
-  { name="Tonie" }
-]
+authors = [{ name="Tonie" }]
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -16,4 +14,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["tflow"]
+packages = ["tflows"]

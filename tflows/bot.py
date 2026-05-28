@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from .engine import Engine
 from .functions import registry
-import tflow.builtins
+import tflows.builtins
 
 class FlowBot(commands.Bot):
     def __init__(self, prefix="!"):
