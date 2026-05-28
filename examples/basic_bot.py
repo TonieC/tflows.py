@@ -1,4 +1,4 @@
-from tflow import FlowBot
+from tflows import FlowBot
 
 bot = FlowBot(prefix="!")
 

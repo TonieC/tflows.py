@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: tflows
-Version: 0.0.2
-Summary: Simple automation and bot framework inspired by aoi.js style syntax
+Version: 0.0.3
+Summary: A lightweight automation and Discord bot framework that lets you build bots using a simple scripting system.
 Author: Tonie
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown

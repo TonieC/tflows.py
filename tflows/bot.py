@@ -2,7 +2,9 @@ import discord
 from discord.ext import commands
 from .engine import Engine
 from .functions import registry
+from .loader import load_modules
 import tflows.builtins
+
 
 class FlowBot(commands.Bot):
     def __init__(self, prefix="!"):
@@ -13,6 +15,9 @@ class FlowBot(commands.Bot):
 
         self.commands_map = {}
         self.engine = Engine(registry)
+
+        # ✅ LOAD MODULES HERE
+        load_modules(registry)
 
     def command(self, name, code):
         self.commands_map[name] = code
