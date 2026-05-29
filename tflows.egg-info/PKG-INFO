@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: tflows
-Version: 0.0.4
+Version: 0.0.5
 Summary: A lightweight automation and Discord bot framework that lets you build bots using a simple scripting system.
 Author: Tonie
 License: MIT

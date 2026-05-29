@@ -1,4 +1,5 @@
 import re
+import asyncio
 
 class Engine:
     def __init__(self, registry):
@@ -9,27 +10,34 @@ class Engine:
     # -----------------------
     def replace_vars(self, ctx, text: str):
 
+        # ❌ NEVER execute embed here
+        # embed must ONLY be handled in run()
+
         if "$ping" in text:
             latency = ctx._state._get_client().latency * 1000
             text = text.replace("$ping", f"{latency:.2f}ms")
 
-        if self.registry.vars:
-            def var_replacer(match):
-                name = match.group(1)
-                args = match.group(2) or ""
+        def var_replacer(match):
+            name = match.group(1)
+            args = match.group(2) or ""
 
-                handler = self.registry.get_var(name)
-                if handler:
-                    return str(handler(ctx, args))
+            handler = self.registry.get_var(name)
+            if handler:
+                result = handler(ctx, args)
 
-                return match.group(0)
+                if asyncio.iscoroutine(result):
+                    raise RuntimeError(f"Async var not supported here: ${name}")
 
-            text = re.sub(
-                r"\$(\w+)(?:\((.*?)\))?",
-                var_replacer,
-                text,
-                flags=re.DOTALL
-            )
+                return str(result)
+
+            return match.group(0)
+
+        text = re.sub(
+            r"\$(\w+)(?:\((.*?)\))?",
+            var_replacer,
+            text,
+            flags=re.DOTALL
+        )
 
         return text
 
@@ -37,11 +45,11 @@ class Engine:
     # EMBED PARSER
     # -----------------------
     async def parse_embed(self, ctx, block: str):
+
         import discord
 
-        block = block.replace("\r\n", "\n")
-
         e = discord.Embed()
+        block = block.replace("\r\n", "\n")
 
         def grab(key):
             m = re.search(rf"\${key}\[(.*?)\]", block, re.DOTALL)
@@ -54,10 +62,10 @@ class Engine:
 
         clean = re.sub(r"\$(title|desc|footer|color)\[.*?\]", "", block, flags=re.DOTALL).strip()
 
-        def apply(text):
-            if not text:
+        def apply(v):
+            if not v:
                 return None
-            return self.replace_vars(ctx, text)
+            return self.replace_vars(ctx, v)
 
         if title:
             e.title = apply(title)
@@ -70,60 +78,50 @@ class Engine:
 
         if color:
             try:
-                e.color = discord.Color(int(color.replace("#", ""), 16))
+                c = color.replace("#", "")
+                if c == "white":
+                    e.color = discord.Color.white()
+                else:
+                    e.color = discord.Color(int(c, 16))
             except:
                 pass
 
         await ctx.channel.send(embed=e)
 
     # -----------------------
-    # MAIN ENGINE (FIXED FLOW)
+    # MAIN ENGINE
     # -----------------------
     async def run(self, ctx, code: str):
 
         lines = code.split("\n")
-
         i = 0
-        while i < len(lines):
-            line = lines[i].rstrip()
 
-            if not line.strip():
+        while i < len(lines):
+            line = lines[i].strip()
+
+            if not line:
                 i += 1
                 continue
 
             # -----------------------
+            # EMBED BLOCK (FIXED)
             # -----------------------
-            # EMBED BLOCK (FIXED SAFE CAPTURE)
-            if line.strip() == "embed":
-                block = []
+            if line == "embed":
                 i += 1
-
-                depth = 0
-                started = False
+                block = []
 
                 while i < len(lines):
-                    current = lines[i]
-
-                    if "$desc[" in current:
-                        started = True
-
-                    if started:
-                        block.append(current)
-
-                        depth += current.count("[")
-                        depth -= current.count("]")
-
-                        if depth <= 0:
-                            i += 1
-                            break
-
+                    if lines[i].strip() == "endembed":
+                        break
+                    block.append(lines[i])
                     i += 1
 
-                raw = "\n".join(block)
-                await self.parse_embed(ctx, raw)
+                await self.parse_embed(ctx, "\n".join(block))
+                i += 1
                 continue
+
             # -----------------------
-            # NORMAL COMMANDS
+            # NORMAL FUNCTIONS
             # -----------------------
             line = self.replace_vars(ctx, line)
 
@@ -134,7 +132,10 @@ class Engine:
             func = self.registry.get(name)
 
             if func:
-                await func(ctx, args)
+                result = func(ctx, args)
+
+                if asyncio.iscoroutine(result):
+                    await result
             else:
                 print(f"[tflow] Unknown function: {name}")
 

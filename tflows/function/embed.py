@@ -3,77 +3,60 @@ import re
 
 def setup(registry):
 
-    @registry.register("embed")
     async def embed(ctx, args):
 
         e = discord.Embed()
-        raw = args
+        raw = args.strip()
 
         # -----------------------
-        # SAFE BRACKET GRABBER
+        # EXTRACT BLOCK
         # -----------------------
-        def grab(key):
-            start = f"${key}["
-            idx = raw.find(start)
+        match = re.search(r"\$embed<([\s\S]*?)>", raw)
+        if not match:
+            return await ctx.channel.send("Invalid embed format")
 
-            if idx == -1:
-                return None
-
-            i = idx + len(start)
-            depth = 1
-            out = []
-
-            while i < len(raw):
-                c = raw[i]
-
-                if c == "[":
-                    depth += 1
-                elif c == "]":
-                    depth -= 1
-                    if depth == 0:
-                        break
-
-                out.append(c)
-                i += 1
-
-            return "".join(out).strip()
+        block = match.group(1)
 
         # -----------------------
-        # CLEAN RAW (SAFE REMOVE TAGS)
+        # PARSE LINES
         # -----------------------
-        def strip_tags(text):
-            for key in ["title", "desc", "footer", "color"]:
-                text = re.sub(rf"\${key}\[.*?\]", "", text, flags=re.DOTALL)
-            return text.strip()
+        data = {}
 
-        # -----------------------
-        # EXTRACT FIELDS
-        # -----------------------
-        title = grab("title")
-        desc = grab("desc")
-        footer = grab("footer")
-        color = grab("color")
+        for line in block.splitlines():
+            line = line.strip()
+            if not line or ":" not in line:
+                continue
 
-        clean = strip_tags(raw)
+            key, value = line.split(":", 1)
+            data[key.strip().lower()] = value.strip()
+
+        engine = ctx.bot.engine
 
         # -----------------------
-        # APPLY EMBED VALUES
+        # APPLY FIELDS
         # -----------------------
-        if title:
-            e.title = title
+        if "title" in data:
+            e.title = engine.replace_vars(ctx, data["title"])
 
-        if desc:
-            e.description = desc
-        else:
-            e.description = clean if clean else "No content"
+        if "desc" in data:
+            e.description = engine.replace_vars(ctx, data["desc"])
 
-        if footer:
-            e.set_footer(text=footer)
+        if "footer" in data:
+            e.set_footer(text=engine.replace_vars(ctx, data["footer"]))
 
-        if color:
+        if "color" in data:
             try:
-                e.color = discord.Color(int(color.replace("#", ""), 16))
+                c = data["color"].replace("#", "")
+                if c == "white":
+                    e.color = discord.Color.white()
+                else:
+                    e.color = discord.Color(int(c, 16))
             except:
                 pass
 
         await ctx.channel.send(embed=e)
+
+    # -----------------------
+    # REGISTER PROPERLY HERE
+    # -----------------------
+    registry.register("embed", embed)
