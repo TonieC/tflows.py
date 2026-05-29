@@ -1,5 +1,6 @@
-from .functions import registry
+from .registry import registry
 
+import tflows.function.time  
 
 @registry.register("send")
 async def send(ctx, args):

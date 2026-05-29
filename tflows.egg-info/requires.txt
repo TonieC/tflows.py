@@ -1,1 +1,6 @@
-discord.py
+discord.py>=2.3.0
+
+[dev]
+pytest
+black
+ruff

@@ -1,17 +1,37 @@
 Metadata-Version: 2.4
 Name: tflows
-Version: 0.0.3
+Version: 0.0.4
 Summary: A lightweight automation and Discord bot framework that lets you build bots using a simple scripting system.
 Author: Tonie
+License: MIT
+Project-URL: Homepage, https://github.com/toniec/tflows
+Project-URL: Repository, https://github.com/toniec/tflows
+Project-URL: Issues, https://github.com/toniec/tflows/issues
+Project-URL: Documentation, https://github.com/toniec/tflows#readme
+Keywords: discord,bot,automation,scripting,framework,discord-bot
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Communications :: Chat
+Classifier: Topic :: Software Development :: Libraries :: Application Frameworks
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 License-File: License
-Requires-Dist: discord.py
+Requires-Dist: discord.py>=2.3.0
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
 Dynamic: license-file
 
 # ⚡ tflows.py
 
 tflows.py is a lightweight automation and Discord bot framework that lets you build bots using a simple scripting system.
+
+[Check Releases](https://pypi.org/project/tflows/)
 
 ---
 
@@ -64,24 +84,6 @@ tflows.py uses a simple scripting engine that:
 - Parses command strings line by line
 - Maps commands to registered Python functions
 - Executes them asynchronously inside Discord events
-
- # 📁 Project Structure
-tflows/
-│
-├── tflows/
-│   ├── __init__.py
-│   ├── bot.py
-│   ├── engine.py
-│   ├── functions.py
-│   ├── builtins.py
-│   └── utils.py
-│
-├── examples/
-│   └── basic_bot.py
-│
-├── pyproject.toml
-├── README.md
-└── LICENSE
 
 
 # 🧠 Why use tflows.py?

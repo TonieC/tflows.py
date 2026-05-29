@@ -1,1 +1,1 @@
-from .tflow.bot import FlowBot
+from .bot import FlowBot

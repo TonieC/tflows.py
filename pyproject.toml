@@ -4,13 +4,51 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tflows"
-version = "0.0.3"
+version = "0.0.4"
 description = "A lightweight automation and Discord bot framework that lets you build bots using a simple scripting system."
-authors = [{ name="Tonie" }]
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+
+authors = [
+  { name = "Tonie" }
+]
+
+keywords = [
+  "discord",
+  "bot",
+  "automation",
+  "scripting",
+  "framework",
+  "discord-bot"
+]
+
 dependencies = [
-  "discord.py"
+  "discord.py>=2.3.0"
+]
+
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Communications :: Chat",
+  "Topic :: Software Development :: Libraries :: Application Frameworks"
+]
+
+[project.urls]
+Homepage = "https://github.com/toniec/tflows"
+Repository = "https://github.com/toniec/tflows"
+Issues = "https://github.com/toniec/tflows/issues"
+Documentation = "https://github.com/toniec/tflows#readme"
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "black",
+  "ruff"
 ]
 
 [tool.setuptools]

@@ -1,9 +1,11 @@
 import discord
 from discord.ext import commands
 from .engine import Engine
-from .functions import registry
-from .loader import load_modules
+from .loader import load_function
 import tflows.builtins
+from .registry import registry
+
+from tflows import function
 
 
 class FlowBot(commands.Bot):
@@ -16,8 +18,7 @@ class FlowBot(commands.Bot):
         self.commands_map = {}
         self.engine = Engine(registry)
 
-        # ✅ LOAD MODULES HERE
-        load_modules(registry)
+        load_function(registry)
 
     def command(self, name, code):
         self.commands_map[name] = code
@@ -25,8 +26,6 @@ class FlowBot(commands.Bot):
     async def on_message(self, message):
         if message.author.bot:
             return
-
-        await self.process_commands(message)
 
         prefix = self.command_prefix
         if not message.content.startswith(prefix):

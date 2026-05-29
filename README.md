@@ -2,6 +2,8 @@
 
 tflows.py is a lightweight automation and Discord bot framework that lets you build bots using a simple scripting system.
 
+[Check Releases](https://pypi.org/project/tflows/)
+
 ---
 
 ## ✨ Features
@@ -53,24 +55,6 @@ tflows.py uses a simple scripting engine that:
 - Parses command strings line by line
 - Maps commands to registered Python functions
 - Executes them asynchronously inside Discord events
-
- # 📁 Project Structure
-tflows/
-│
-├── tflows/
-│   ├── __init__.py
-│   ├── bot.py
-│   ├── engine.py
-│   ├── functions.py
-│   ├── builtins.py
-│   └── utils.py
-│
-├── examples/
-│   └── basic_bot.py
-│
-├── pyproject.toml
-├── README.md
-└── LICENSE
 
 
 # 🧠 Why use tflows.py?
