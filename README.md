@@ -1,71 +1,103 @@
 # ⚡ tflows.py
 
-tflows.py is a lightweight automation and Discord bot framework that lets you build bots using a simple scripting system.
+tflows.py is a lightweight automation and Discord bot framework built around a scripting engine that lets you define bot behavior using simple text-based commands instead of large boilerplate code.
 
-[Check Releases](https://pypi.org/project/tflows/)
+It is designed for fast bot development, easy customization, and extensible command logic.
+
+---
+
+## 🔗 Links
+
+- PyPI: https://pypi.org/project/tflows/
+- Documentation: https://toniec.github.io/tflows
+- Discord: https://discord.gg/CMSXnfcCJW
+- Repository: https://github.com/toniec/tflows
 
 ---
 
 ## ✨ Features
 
-- ⚡ Simple command system  
-- 🧠 Built-in function engine  
-- 🔁 Event-based execution  
-- 🔌 Extensible architecture (add your own functions)  
-- 📦 Easy to install via pip  
+- 🧩 Script-based command system (write bot logic as plain text)
+- ⚡ Async Discord integration using discord.py
+- 🔁 Event-driven execution model
+- 🧠 Built-in function registry (extensible commands)
+- 🔌 Modular architecture for custom features
+- 📦 Lightweight design with minimal setup
+- 🛠️ Debug-friendly logging system
 
 ---
 
 ## 🚀 Example
-
-```python
+```py
 from tflows import FlowBot
 
 bot = FlowBot(prefix="!")
 
 bot.command(
     name="ping",
-    code=\"\"\"
-send pong
-log command executed
-\"\"\"
+    code="""
+    send pong $ping
+    log command executed
+    """
 )
 
 bot.run("YOUR_TOKEN")
 ```
+---
 
-# 🧩 Built-in Functions
-send <message> → sends a message in chat
-log <message> → prints to console
+## 🧩 Built-in Functions
+
+### send <message>
+Sends a message to the current Discord channel.
 
 Example:
-```
+```js
 send Hello world
-log This ran successfully
 ```
+---
 
-# 📦 Installation
+### log <message>
+Prints a message to the console for debugging.
+
+Example:
+```js
+log command executed successfully
 ```
-pip install tflows.py
-```
+---
 
-# 🛠️ How It Works
+## ⚙️ How It Works
 
-tflows.py uses a simple scripting engine that:
-- Parses command strings line by line
-- Maps commands to registered Python functions
-- Executes them asynchronously inside Discord events
+tflows.py executes scripts using a lightweight interpreter:
 
+- Parses command blocks line by line  
+- Matches each line to a registered function  
+- Resolves variables and context  
+- Executes asynchronously inside Discord events  
 
-# 🧠 Why use tflows.py?
-Build bots faster
-No complex boilerplate
-Focus on logic, not setup
-Easily extendable for automation systems
+---
 
-# 📜 License
+## 🧠 Why Use tflows.py?
+
+- Faster development than raw Discord.py
+- No boilerplate-heavy structure
+- Easy to extend with custom functions
+- Ideal for automation scripting systems
+- Keeps logic minimal and readable
+
+---
+
+## 📦 Installation
+
+pip install tflows
+
+---
+
+## 📜 License
+
 MIT License
 
-# ⚡ Author
+---
+
+## ⚡ Author
 
 Made with ❤️ by Tonie

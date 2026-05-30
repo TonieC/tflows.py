@@ -6,18 +6,16 @@ class Engine:
         self.registry = registry
 
     # -----------------------
-    # VARIABLES
+    # VARIABLES (FIXED)
     # -----------------------
-    def replace_vars(self, ctx, text: str):
+    async def replace_vars(self, ctx, text: str):
 
-        # ❌ NEVER execute embed here
-        # embed must ONLY be handled in run()
-
+        # $ping (keep simple)
         if "$ping" in text:
             latency = ctx._state._get_client().latency * 1000
             text = text.replace("$ping", f"{latency:.2f}ms")
 
-        def var_replacer(match):
+        async def var_replacer(match):
             name = match.group(1)
             args = match.group(2) or ""
 
@@ -25,19 +23,22 @@ class Engine:
             if handler:
                 result = handler(ctx, args)
 
+                # ✅ SUPPORT ASYNC NOW
                 if asyncio.iscoroutine(result):
-                    raise RuntimeError(f"Async var not supported here: ${name}")
+                    result = await result
 
                 return str(result)
 
             return match.group(0)
 
-        text = re.sub(
-            r"\$(\w+)(?:\((.*?)\))?",
-            var_replacer,
-            text,
-            flags=re.DOTALL
-        )
+        # IMPORTANT: async replace loop
+        pattern = r"\$(\w+)(?:\((.*?)\))?"
+        matches = list(re.finditer(pattern, text, re.DOTALL))
+
+        for match in reversed(matches):
+            replacement = await var_replacer(match)
+            start, end = match.span()
+            text = text[:start] + replacement + text[end:]
 
         return text
 
@@ -47,10 +48,14 @@ class Engine:
     async def parse_embed(self, ctx, block: str):
 
         import discord
+        import re
 
         e = discord.Embed()
         block = block.replace("\r\n", "\n")
 
+        # -----------------------
+        # EXTRACT HELPERS
+        # -----------------------
         def grab(key):
             m = re.search(rf"\${key}\[(.*?)\]", block, re.DOTALL)
             return m.group(1).strip() if m else None
@@ -60,32 +65,57 @@ class Engine:
         footer = grab("footer")
         color = grab("color")
 
-        clean = re.sub(r"\$(title|desc|footer|color)\[.*?\]", "", block, flags=re.DOTALL).strip()
+        clean = re.sub(
+            r"\$(title|desc|footer|color)\[.*?\]",
+            "",
+            block,
+            flags=re.DOTALL
+        ).strip()
 
-        def apply(v):
+        # -----------------------
+        # SAFE APPLY (ALWAYS AWAIT VAR ENGINE)
+        # -----------------------
+        async def apply(v):
             if not v:
                 return None
-            return self.replace_vars(ctx, v)
+            return await self.replace_vars(ctx, v)
 
+        # -----------------------
+        # TITLE
+        # -----------------------
         if title:
-            e.title = apply(title)
+            e.title = await apply(title)
 
+        # -----------------------
+        # DESCRIPTION
+        # -----------------------
         full_desc = desc if desc else clean
-        e.description = self.replace_vars(ctx, full_desc or "No content")
+        e.description = await self.replace_vars(ctx, full_desc or "No content")
 
+        # -----------------------
+        # FOOTER
+        # -----------------------
         if footer:
-            e.set_footer(text=apply(footer))
+            e.set_footer(text=await apply(footer))
 
+        # -----------------------
+        # COLOR
+        # -----------------------
         if color:
             try:
-                c = color.replace("#", "")
+                c = color.replace("#", "").lower()
+
                 if c == "white":
                     e.color = discord.Color.white()
                 else:
                     e.color = discord.Color(int(c, 16))
-            except:
+
+            except Exception:
                 pass
 
+        # -----------------------
+        # SEND
+        # -----------------------
         await ctx.channel.send(embed=e)
 
     # -----------------------
@@ -104,7 +134,7 @@ class Engine:
                 continue
 
             # -----------------------
-            # EMBED BLOCK (FIXED)
+            # EMBED BLOCK
             # -----------------------
             if line == "embed":
                 i += 1
@@ -123,7 +153,7 @@ class Engine:
             # -----------------------
             # NORMAL FUNCTIONS
             # -----------------------
-            line = self.replace_vars(ctx, line)
+            line = await self.replace_vars(ctx, line)
 
             parts = line.split(" ", 1)
             name = parts[0]

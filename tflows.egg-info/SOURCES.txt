@@ -1,4 +1,5 @@
 License
+NOTICE
 README.md
 pyproject.toml
 tflows/__init__.py

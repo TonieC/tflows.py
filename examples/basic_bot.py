@@ -9,8 +9,45 @@ bot.command(
   name="test",
   code="""
 embed
-$title[Tflow Time System Demo]
-$desc[Ping: $ping\n--- TIME TESTS ---\n\nDefault: $time(nodate;24h)\nNo Date: $time(nodate)\nNo Time: $time(notime)\n24h: $time(24h)\n12h: $time(12h)\n\nCombined 1: $time(nodate;24h)\nCombined 2: $time(nodate;12h)\nCombined 3: $time(notime;24h)\nCombined 4: $time(notime;12h)]
+$title[All Variables Test]
+
+$desc[
+=== SERVER ===
+$server
+$server(name)
+$server(boost)
+$server(boostlvl)
+
+=== MEMBERCOUNT ===
+$membercount
+$membercount(all)
+$membercount(user)
+$membercount(bots)
+
+=== ID ===
+$id
+$id(user)
+$id(mention)
+$id(act)
+
+=== IMAGE ===
+$image
+$image(user)
+$image(mention)
+$image(act)
+
+=== TIME ===
+$time()
+$time(12h)
+$time(nodate)
+$time(nodate;24h)
+
+=== PING ===
+$ping
+]
+
+$image[$image(act)]
+endembed
 """
 )
 

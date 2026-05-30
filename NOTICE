@@ -1,0 +1,118 @@
+# 📢 NOTICE
+
+This project, **tflows.py**, is a lightweight automation and Discord bot framework designed to simplify bot creation through a script-based execution engine.
+
+It is developed and maintained by **Tonie**.
+
+---
+
+## 📌 Attribution Requirement
+
+If you use this software in any form, whether modified or unmodified, you must include clear attribution to the original author:
+
+**Required credit format:**
+- tflows.py by Tonie  
+- or “Powered by tflows.py (Tonie)”
+
+Attribution must be visible in one of the following:
+- Project documentation
+- Source code comments (if redistributed as code)
+- Application output, UI, or credits section (if used in a product)
+- About page or equivalent location in software interfaces
+
+---
+
+## ⚙️ Project Description
+
+tflows.py is built around a custom scripting engine that allows users to define Discord bot behavior using simple text commands.
+
+Instead of writing complex event handlers for every action, tflows translates structured command scripts into executable functions.
+
+Key design goals:
+- Reduce boilerplate in Discord bot development
+- Provide an extensible function registry system
+- Enable fast prototyping of automation workflows
+- Keep logic readable and script-based
+
+---
+
+## 🧩 Core System Overview
+
+The framework operates through a modular execution pipeline:
+
+1. Command Input Parsing  
+   Scripts are read line-by-line and split into executable instructions.
+
+2. Function Mapping  
+   Each instruction is matched to a registered internal function.
+
+3. Context Execution  
+   Commands run inside Discord event contexts asynchronously.
+
+4. Output Handling  
+   Responses are sent to Discord or logged depending on function behavior.
+
+---
+
+## 🔌 Extensibility
+
+tflows.py supports user-defined functions through a registry system.
+
+Developers can:
+- Add custom commands
+- Override default behaviors
+- Extend scripting capabilities
+- Integrate external APIs or services
+
+This makes tflows suitable for both simple bots and advanced automation systems.
+
+---
+
+## 📦 Usage Context
+
+tflows.py may be used for:
+- Discord bots
+- Automation tools
+- Lightweight scripting systems
+- Educational projects
+- Rapid prototyping of command-based systems
+
+---
+
+## ⚠️ Restrictions
+
+While Apache 2.0 allows broad usage, attribution under this NOTICE file is required when:
+- Redistributing the software
+- Using it in closed-source applications
+- Building derivative systems
+- Embedding it into larger frameworks or platforms
+
+Failure to provide attribution violates the intended use of this project identity.
+
+---
+
+## 🧠 Project Identity
+
+tflows.py is not just a library, but a scripting execution concept focused on simplifying Discord bot logic into readable command flows.
+
+It emphasizes:
+- Minimal setup
+- Script-first design
+- Expandable function system
+- Developer accessibility
+
+---
+
+## 📜 License Notice
+
+This NOTICE file is intended to supplement the Apache License 2.0 under which this project is distributed.
+
+The Apache 2.0 license remains the primary legal license governing usage, distribution, and modification.
+
+---
+
+## 👤 Author
+
+Developed and maintained by **Tonie**
+
+All contributions, forks, and derivatives should retain visible credit to the original project source.
