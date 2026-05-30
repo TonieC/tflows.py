@@ -6,49 +6,20 @@ from tflows import FlowBot
 bot = FlowBot(prefix="!")
 
 bot.command(
-  name="test",
+  name="uptime",
   code="""
 embed
-$title[All Variables Test]
+$title[Uptime Variants]
 
 $desc[
-=== SERVER ===
-$server
-$server(name)
-$server(boost)
-$server(boostlvl)
-
-=== MEMBERCOUNT ===
-$membercount
-$membercount(all)
-$membercount(user)
-$membercount(bots)
-
-=== ID ===
-$id
-$id(user)
-$id(mention)
-$id(act)
-
-=== IMAGE ===
-$image
-$image(user)
-$image(mention)
-$image(act)
-
-=== TIME ===
-$time()
-$time(12h)
-$time(nodate)
-$time(nodate;24h)
-
-=== PING ===
-$ping
+Default: $uptime
+Full: $uptime(full)
+Short: $uptime(short)
+Clock: $uptime(clock)
+Seconds: $uptime(seconds)
+Custom: $uptime(d, h, m, s)
 ]
-
-$image[$image(act)]
-endembed
 """
 )
 
-bot.run("BOT_TOKEN")
+bot.run("BOT_TOKEN") 
