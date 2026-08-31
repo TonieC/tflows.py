@@ -1,0 +1,4 @@
+include LICENSE
+include NOTICE
+include CHANGELOG.md
+recursive-include examples *.py

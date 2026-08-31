@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tflows"
-version = "0.0.8"
+version = "1.0.0"
 description = "A lightweight automation and Discord bot framework that lets you build bots using a simple scripting system."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { file = "License" }
 
 authors = [
   { name = "Tonie" }
@@ -28,29 +28,54 @@ dependencies = [
 ]
 
 classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.13",
+  "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Topic :: Communications :: Chat",
   "Topic :: Software Development :: Libraries :: Application Frameworks"
 ]
 
 [project.urls]
-Homepage = "https://github.com/toniec/tflows"
-Repository = "https://github.com/toniec/tflows"
-Issues = "https://github.com/toniec/tflows/issues"
-Documentation = "https://toniec.github.io/tflows"
+Homepage = "https://github.com/TonieC/tflows.py"
+Repository = "https://github.com/TonieC/tflows.py"
+Issues = "https://github.com/TonieC/tflows.py/issues"
+Documentation = "https://github.com/TonieC/tflows.py"
 Discord = "https://discord.gg/CMSXnfcCJW"
 
 [project.optional-dependencies]
 dev = [
-  "pytest",
+  "pytest>=7",
+  "pytest-asyncio",
   "black",
-  "ruff"
+  "ruff",
+  "build",
+  "twine"
 ]
 
-[tool.setuptools]
-packages = ["tflows"]
+[tool.setuptools.packages.find]
+include = ["tflows*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+  "E501"
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]

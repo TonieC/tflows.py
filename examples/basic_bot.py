@@ -1,25 +1,30 @@
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+"""A minimal tflows bot.
+
+Run with:  python examples/basic_bot.py
+"""
+
 from tflows import FlowBot
+import os
+
 
 bot = FlowBot(prefix="!")
 
 bot.command(
-  name="uptime",
-  code="""
-embed
-$title[Uptime Variants]
-
-$desc[
-Default: $uptime
-Full: $uptime(full)
-Short: $uptime(short)
-Clock: $uptime(clock)
-Seconds: $uptime(seconds)
-Custom: $uptime(d, h, m, s)
-]
-"""
+    name="ping",
+    code="""
+    // Show the current WebSocket latency
+    reply Pong! $ping
+    """,
+    description="Replies with the bot's latency.",
 )
 
-bot.run("BOT_TOKEN") 
+bot.command(
+    name="greet",
+    code="""
+    // Use the raw command arguments
+    reply Hello $args!
+    """,
+    description="Greets the given name.",
+)
+
+TOKEN = os.getenv("DISCORD_TOKEN")

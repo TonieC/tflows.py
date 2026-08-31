@@ -1,62 +1,79 @@
-import discord
 import re
+
+import discord
+
+from ..engine import Engine
+from ..utils import parse_color
+
+_EMBED_KEYS = ("title", "desc", "footer", "color", "thumbnail", "image", "author", "timestamp")
+
+
+def _parse_entries(block):
+    """Split an embed block into ``(key, value)`` entries.
+
+    Entries can be separated by newlines or by ``|`` so the single-line
+    ``$embed<...>`` form stays convenient.
+    """
+    entries = []
+    for part in re.split(r"\n|\|", block):
+        part = part.strip()
+        if not part or ":" not in part:
+            continue
+        key, value = part.split(":", 1)
+        entries.append((key.strip().lower(), value.strip()))
+    return entries
+
 
 def setup(registry):
 
+    @registry.register("embed")
     async def embed(ctx, args):
-
-        e = discord.Embed()
         raw = args.strip()
-
-        # -----------------------
-        # EXTRACT BLOCK
-        # -----------------------
         match = re.search(r"\$embed<([\s\S]*?)>", raw)
         if not match:
-            return await ctx.channel.send("Invalid embed format")
+            await ctx.channel.send("Invalid embed format")
+            return
 
         block = match.group(1)
+        e = discord.Embed()
 
-        # -----------------------
-        # PARSE LINES
-        # -----------------------
-        data = {}
+        engine = getattr(getattr(ctx, "bot", None), "engine", None)
+        if engine is None:
+            engine = Engine(registry)
 
-        for line in block.splitlines():
-            line = line.strip()
-            if not line or ":" not in line:
+        fields = []
+
+        for key, value in _parse_entries(block):
+            if key == "field":
+                parts = [p.strip() for p in value.split(";")]
+                name = parts[0] if len(parts) > 0 else ""
+                field_value = parts[1] if len(parts) > 1 else ""
+                inline = len(parts) > 2 and parts[2].lower() in ("true", "1", "yes", "y")
+                fields.append((name, field_value, inline))
                 continue
 
-            key, value = line.split(":", 1)
-            data[key.strip().lower()] = value.strip()
+            resolved = await engine.replace_vars(ctx, value)
 
-        engine = ctx.bot.engine
+            if key == "title":
+                e.title = resolved
+            elif key in ("desc", "description"):
+                e.description = resolved
+            elif key == "footer":
+                e.set_footer(text=resolved)
+            elif key == "color":
+                color = parse_color(resolved)
+                if color is not None:
+                    e.color = discord.Color(color)
+            elif key == "thumbnail":
+                e.set_thumbnail(url=resolved)
+            elif key == "image":
+                e.set_image(url=resolved)
+            elif key == "author":
+                e.set_author(name=resolved)
+            elif key == "timestamp":
+                e.timestamp = ctx.message.created_at
 
-        # -----------------------
-        # APPLY FIELDS
-        # -----------------------
-        if "title" in data:
-            e.title = engine.replace_vars(ctx, data["title"])
-
-        if "desc" in data:
-            e.description = engine.replace_vars(ctx, data["desc"])
-
-        if "footer" in data:
-            e.set_footer(text=engine.replace_vars(ctx, data["footer"]))
-
-        if "color" in data:
-            try:
-                c = data["color"].replace("#", "")
-                if c == "white":
-                    e.color = discord.Color.white()
-                else:
-                    e.color = discord.Color(int(c, 16))
-            except:
-                pass
+        for name, field_value, inline in fields:
+            e.add_field(name=name, value=field_value, inline=inline)
 
         await ctx.channel.send(embed=e)
-
-    # -----------------------
-    # REGISTER PROPERLY HERE
-    # -----------------------
-    registry.register("embed", embed)

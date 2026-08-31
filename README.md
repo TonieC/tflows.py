@@ -1,33 +1,9 @@
-# ⚡ tflows.py
+# tflows.py
 
-tflows.py is a lightweight automation and Discord bot framework built around a scripting engine that lets you define bot behavior using simple text-based commands instead of large boilerplate code.
+tflows.py is a lightweight automation and Discord bot framework built around a
+scripting engine. Instead of writing Python event handlers for every action,
+you define bot behavior as simple text scripts:
 
-It is designed for fast bot development, easy customization, and extensible command logic.
-
----
-
-## 🔗 Links
-
-- PyPI: https://pypi.org/project/tflows/
-- Documentation: https://toniec.github.io/tflows
-- Discord: https://discord.gg/CMSXnfcCJW
-- Repository: https://github.com/toniec/tflows
-
----
-
-## ✨ Features
-
-- 🧩 Script-based command system (write bot logic as plain text)
-- ⚡ Async Discord integration using discord.py
-- 🔁 Event-driven execution model
-- 🧠 Built-in function registry (extensible commands)
-- 🔌 Modular architecture for custom features
-- 📦 Lightweight design with minimal setup
-- 🛠️ Debug-friendly logging system
-
----
-
-## 🚀 Example
 ```py
 from tflows import FlowBot
 
@@ -36,68 +12,262 @@ bot = FlowBot(prefix="!")
 bot.command(
     name="ping",
     code="""
-    send pong $ping
-    log command executed
-    """
+    // Send a reply with the current latency
+    reply Pong! $ping
+    """,
 )
 
-bot.run("YOUR_TOKEN")
+bot.run("YOUR_BOT_TOKEN")
 ```
----
 
-## 🧩 Built-in Functions
-
-### send <message>
-Sends a message to the current Discord channel.
-
-Example:
-```js
-send Hello world
-```
----
-
-### log <message>
-Prints a message to the console for debugging.
-
-Example:
-```js
-log command executed successfully
-```
----
-
-## ⚙️ How It Works
-
-tflows.py executes scripts using a lightweight interpreter:
-
-- Parses command blocks line by line  
-- Matches each line to a registered function  
-- Resolves variables and context  
-- Executes asynchronously inside Discord events  
+It is designed for fast bot development, easy customization, and extensible
+command logic — while staying fully compatible with discord.py so you can mix
+scripts and regular commands.
 
 ---
 
-## 🧠 Why Use tflows.py?
+## Features
 
-- Faster development than raw Discord.py
-- No boilerplate-heavy structure
-- Easy to extend with custom functions
-- Ideal for automation scripting systems
-- Keeps logic minimal and readable
+- Script-based command system — write bot logic as plain text
+- Built-in `$variable` templates (`$user`, `$server`, `$args`, `$ping`, ...)
+- Command arguments: `$args`, `$arg(0)`, `$argcount`
+- Rich embeds, both as blocks and single-line commands
+- Built-in `help` command, aliases, and command descriptions
+- Comment support in scripts (`//`, `#`, `--`)
+- Async Discord integration using discord.py 2.x
+- Extensible registry: add your own functions and variables
+- Mixing with regular discord.py commands, cogs, and listeners
 
 ---
 
-## 📦 Installation
+## Installation
 
+```bash
 pip install tflows
+```
+
+Requires Python 3.10+.
 
 ---
 
-## 📜 License
+## Quick Start
 
-MIT License
+```py
+from tflows import FlowBot
+
+bot = FlowBot(prefix="!")
+
+bot.command(
+    name="hello",
+    code="""
+    reply Hello $user(display)!
+    """,
+)
+
+bot.run("YOUR_BOT_TOKEN")
+```
+
+### Command registration
+
+`FlowBot.command(name, code, description="", aliases=())` registers a script
+command:
+
+```py
+bot.command(
+    name="greet",
+    code="reply Hello $args",
+    description="Greets the given name.",
+    aliases=("hi", "hey"),
+)
+```
+
+Both `!greet`, `!hi` and `!hey` now trigger the same script.
+
+### The built-in help command
+
+By default `!help` lists every script command, and `!help <command>` shows its
+description, aliases, usage, and source script. Disable it with
+`FlowBot(prefix="!", help_command=False)`.
 
 ---
 
-## ⚡ Author
+## Variables
 
-Made with ❤️ by Tonie
+Variables are replaced anywhere in a script, including inside function
+arguments. Usage is `$name` or `$name(option)`.
+
+| Variable | Options | Description |
+| --- | --- | --- |
+| `$user` / `$author` | `name`, `display`, `id`, `mention`, `avatar`, `bot`, `created`, `joined`, `tag` | Information about the message author |
+| `$server` / `$guild` | `name`, `id`, `icon`, `owner`, `members`, `boost`, `boostlvl`, `created`, `description` | Information about the current guild |
+| `$channel` | `name`, `id`, `mention`, `topic`, `nsfw`, `type`, `position`, `category`, `created` | Information about the current channel |
+| `$bot` | `name`, `id`, `mention`, `avatar`, `status`, `ping`, `uptime` | Information about the bot itself |
+| `$args` | — | Everything typed after the command name |
+| `$arg(n)` | `0`-based index, negative counts from the end, `a:b` slices | A single argument |
+| `$argcount` | — | Number of arguments |
+| `$ping` | — | The bot's current latency |
+| `$time` | `12h`, `24h`, `nodate`, `notime` | Current time |
+| `$uptime` | `full`, `short`, `clock`, `seconds`, custom like `d:h:m:s` | Bot uptime |
+| `$membercount` | `all`, `user`, `bots` | Member counts |
+| `$random` | `a, b` (inclusive range) | A random number |
+| `$id` | — | The author's user ID |
+| `$avatar` / `$image` | — | The author's avatar URL |
+| `$prefix` | — | The bot's command prefix |
+| `$command` | — | The currently running command name |
+
+Unknown variables are left untouched so typos never silently corrupt output.
+
+Example:
+
+```
+!greet world
+```
+```
+reply Hello $args            # -> Hello world
+reply First: $arg(0)         # -> First: world
+reply Count: $argcount       # -> Count: 1
+```
+
+---
+
+## Functions
+
+Every line of a script calls one function:
+
+```
+<function-name> <arguments...>
+```
+
+### Core functions
+
+| Function | Example | Description |
+| --- | --- | --- |
+| `send` | `send hello` | Sends a message to the current channel |
+| `reply` | `reply hi $user` | Replies to the invoking message |
+| `log` | `log command ran` | Prints a message to the console |
+| `wait` | `wait 3s` | Waits (`s`, `m`, `h`, `d` suffixes supported) |
+| `react` | `react ✅` | Adds reactions to the invoking message |
+| `delete` | `delete` | Deletes the invoking message |
+| `clear` | `clear 10` | Purges recent messages (needs Manage Messages) |
+| `ping` | `ping` | Replies with the bot's latency |
+
+### Embeds
+
+The block form is best for rich, multi-line embeds:
+
+```
+embed
+$title[Server Stats]
+$desc[
+Members: $membercount
+Uptime: $uptime(full)
+]
+$footer[Requested by $user(display)]
+$color[blurple]
+$thumbnail[$bot(avatar)]
+endembed
+```
+
+Supported keys: `$title`, `$desc`, `$footer`, `$color` (hex or named), `$thumbnail`,
+`$image`, `$author`, `$timestamp`. Named colors include `white`, `black`, `red`,
+`green`, `blue`, `yellow`, `orange`, `purple`, `pink`, `grey`, `blurple`, `gold`,
+`teal`, `cyan`, and `brown`.
+
+A single-line form using the `embed` function is also available, with keys
+separated by `|` and fields via `field: Name;Value;inline`:
+
+```
+embed $embed<title: $user(display) | desc: Level 42 | color: green | field: Role;Admin;true>
+```
+
+### Comments
+
+Lines starting with `//`, `#`, or `--` are ignored.
+
+---
+
+## Mixing with discord.py
+
+Because `FlowBot` subclasses `discord.ext.commands.Bot`, everything discord.py
+offers keeps working: cogs, listeners, `@bot.event`, app commands, etc. When a
+message matches the prefix but not a script command, it is passed through to
+discord.py's command processor automatically.
+
+```py
+import discord
+from discord.ext import commands
+from tflows import FlowBot
+
+class Moderation(commands.Cog):
+    @commands.command()
+    async def purge(self, ctx, limit: int):
+        await ctx.channel.purge(limit=limit)
+
+bot = FlowBot(prefix="!")
+bot.command(name="hello", code="reply Hi $user(display)!")
+bot.add_cog(Moderation(bot))
+bot.run("YOUR_BOT_TOKEN")
+```
+
+---
+
+## Custom functions and variables
+
+Functions are callables `fn(ctx, args)` and variables are callables
+`var(ctx, args)` that return a string (or an awaitable). Register them on the
+shared registry:
+
+```py
+from tflows import FlowBot
+from tflows.registry import registry
+
+@registry.register("shrug")
+async def shrug(ctx, args):
+    await ctx.channel.send("¯\\_(ツ)_/¯")
+
+@registry.register_var("uptime_hours")
+def uptime_hours(ctx, args):
+    return str(bot_uptime_seconds() // 3600)
+
+bot = FlowBot(prefix="!")
+```
+
+Alternatively, create an isolated bot with its own registry:
+`FlowBot(prefix="!", registry=FunctionRegistry())`.
+
+### FlowBot options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `prefix` | `"!"` | Command prefix (a string or list of strings) |
+| `help_command` | `True` | Enable the built-in `!help` command |
+| `log_errors` | `True` | Log script errors instead of raising |
+| `log_unknown_functions` | `True` | Log unknown function names |
+| `case_insensitive` | `False` | Match command names case-insensitively |
+| `members_intent` | `False` | Enable the privileged members intent |
+| `registry` | shared | Use an isolated `FunctionRegistry` |
+
+---
+
+## Examples
+
+See the `examples/` directory:
+
+- `basic_bot.py` — minimal bot
+- `variables.py` — variable showcase
+- `embeds.py` — block and single-line embeds
+- `automation.py` — `wait`, `react`, `delete`, `clear`
+- `mixing.py` — scripts alongside discord.py cogs
+
+Run any example after installing the package:
+
+```bash
+python examples/basic_bot.py
+```
+
+---
+
+## License
+
+Apache License 2.0 — see the `License` file. Attribution to the original author
+is required when redistributing or embedding the software; see `NOTICE`.

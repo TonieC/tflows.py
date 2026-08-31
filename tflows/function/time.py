@@ -1,16 +1,15 @@
-from tflows.registry import registry
 from datetime import datetime
 
-def time_func(ctx, args):
+
+def _time_info(ctx, args):
     now = datetime.now()
 
     parts = args.split(";") if args else []
-
     fmt = "24h"
     mode = "full"
 
     for p in parts:
-        if p in ["24h", "12h"]:
+        if p in ("24h", "12h"):
             fmt = p
         if p == "nodate":
             mode = "time"
@@ -31,4 +30,5 @@ def time_func(ctx, args):
     return f"{d} {t}"
 
 
-registry.register_var("time", time_func)
+def setup(registry):
+    registry.register_var("time", _time_info)
