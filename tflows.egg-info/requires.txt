@@ -1,6 +1,9 @@
 discord.py>=2.3.0
 
 [dev]
-pytest
+pytest>=7
+pytest-asyncio
 black
 ruff
+build
+twine
