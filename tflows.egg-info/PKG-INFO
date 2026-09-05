@@ -38,7 +38,7 @@ Classifier: Topic :: Communications :: Chat
 Classifier: Topic :: Software Development :: Libraries :: Application Frameworks
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-License-File: License
+License-File: LICENSE
 License-File: NOTICE
 Requires-Dist: discord.py>=2.3.0
 Provides-Extra: dev
