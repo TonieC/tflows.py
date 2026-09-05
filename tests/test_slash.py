@@ -46,6 +46,18 @@ def test_parse_slash_params():
         parse_slash_params(["a", "a"])
     with pytest.raises(ValueError):
         parse_slash_params([("x", list)])
+    with pytest.raises(ValueError):
+        parse_slash_params(["x: banana"])
+
+
+async def test_slash_params_without_slash_warns(bot, caplog):
+    import logging
+
+    bot.command("plain", "send hi", slash_params=["name"])
+    assert bot.tree.get_command("plain") is None
+    with caplog.at_level(logging.WARNING, logger="tflows.bot"):
+        bot.command("plain2", "send hi", slash_params=["name"])
+    assert any("slash=True" in r.message for r in caplog.records)
 
 
 async def test_slash_registers_tree_command(bot):

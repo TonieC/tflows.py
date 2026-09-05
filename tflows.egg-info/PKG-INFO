@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: tflows
-Version: 0.9.1
+Version: 1.0.1
 Summary: A lightweight automation and Discord bot framework that lets you build bots using a simple scripting system.
 Author: Tonie
 License: # Apache License 2.0
@@ -83,6 +83,11 @@ scripts and regular commands.
 - Script-based command system — write bot logic as plain text
 - Built-in `$variable` templates (`$user`, `$server`, `$args`, `$ping`, ...)
 - Command arguments: `$args`, `$arg(0)`, `$argcount`
+- Conditionals: `if` / `elif` / `else` / `endif` with comparisons and nesting
+- Slash commands via `slash=True` or `bot.slashcommand(...)`
+- Cooldowns (`cooldown 5s per user`) and permission guards (`require ...`)
+- SQLite persistent per-server state: `set` / `get` / `del` / `incr`
+- Scheduled tasks (`bot.schedule(...)`, `every 1h`, cron) and event triggers (`bot.on_event("join", ...)`)
 - Rich embeds, both as blocks and single-line commands
 - Built-in `help` command, aliases, and command descriptions
 - Comment support in scripts (`//`, `#`, `--`)
@@ -155,8 +160,12 @@ arguments. Usage is `$name` or `$name(option)`.
 | `$channel` | `name`, `id`, `mention`, `topic`, `nsfw`, `type`, `position`, `category`, `created` | Information about the current channel |
 | `$bot` | `name`, `id`, `mention`, `avatar`, `status`, `ping`, `uptime` | Information about the bot itself |
 | `$args` | — | Everything typed after the command name |
-| `$arg(n)` | `0`-based index, negative counts from the end, `a:b` slices | A single argument |
+| `$arg(n)` | `0`-based index, negative counts from the end, `a:b` slices, or a slash-parameter name | A single argument |
 | `$argcount` | — | Number of arguments |
+| `$get(key)` / `$state(key)` | `$get(points)`, `$get(points, 0)` | Inline read of persistent state (with optional fallback) |
+| `$hasrole(name)` | `$hasrole(Moderator)` | `true` when the author has the role |
+| `$hasperm(name)` | `$hasperm(manage_messages)` | `true` when the author has the permission |
+| `$isowner` | — | `true` when the author owns the server |
 | `$ping` | — | The bot's current latency |
 | `$time` | `12h`, `24h`, `nodate`, `notime` | Current time |
 | `$uptime` | `full`, `short`, `clock`, `seconds`, custom like `d:h:m:s` | Bot uptime |
@@ -202,6 +211,10 @@ Every line of a script calls one function:
 | `delete` | `delete` | Deletes the invoking message |
 | `clear` | `clear 10` | Purges recent messages (needs Manage Messages) |
 | `ping` | `ping` | Replies with the bot's latency |
+| `set` | `set points 10` / `set points +5` | Stores persistent state (`+N`/`-N` increments atomically) |
+| `get` | `get points` / `get points 0` | Sends the stored value (with optional fallback) |
+| `del` | `del points` | Forgets a stored key |
+| `incr` | `incr points 3` | Atomically increments a counter (default `1`) |
 
 ### Embeds
 
@@ -235,6 +248,150 @@ embed $embed<title: $user(display) | desc: Level 42 | color: green | field: Role
 ### Comments
 
 Lines starting with `//`, `#`, or `--` are ignored.
+
+---
+
+## Conditionals
+
+Branch directly in scripts — no Python needed:
+
+```
+if $argcount > 1:
+    reply Multiple arguments: $args
+elif $argcount == 1:
+    reply One argument: $arg(0)
+else:
+    reply Give me something to echo!
+endif
+```
+
+- `endif` is optional when the block runs to the end of the script, or when
+  dedentation shows where it ends (a dedented line after an indented block
+  closes it). Use `endif` when unconditional code follows, or when lines are
+  not indented.
+- Operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `startswith`,
+  `endswith`, `in`. Numbers compare numerically, everything else
+  case-insensitively as text.
+- Combine clauses with `and` / `or`, negate with `not`. A bare value is
+  truthy unless empty or `0` / `false` / `no` / `none`.
+- Blocks nest. Conditions see all `$variables`, so guards like
+  `if $hasrole(Moderator):`, `if $hasperm(manage_messages):`,
+  `if $channel == announcements:` and `if $user == SomeName:` all work.
+
+---
+
+## Cooldowns and permission guards
+
+Declare controls at the top of a command script:
+
+```
+cooldown 5s per user
+require manage_messages
+require role Moderator
+require owner
+```
+
+- `cooldown <duration> [per user|channel|guild|global]` (default `per user`).
+  Durations accept `s`, `m`, `h`, `d` suffixes. While on cooldown the script
+  is skipped and the user is told how long to wait.
+- `require <permission>` checks Discord permissions
+  (`manage_messages`, `administrator`, `kick_members`, ...),
+  `require role <name>` checks a role (with `admin`/`mod` shortcuts),
+  `require owner` checks server ownership. Unauthorized users get a denial
+  message and the script never runs. Unparseable `require` lines fail closed.
+
+---
+
+## Persistent state
+
+SQLite-backed storage that survives restarts and is isolated per server:
+
+```
+set points[$user] +10
+get points[$user]
+```
+
+`set <key> <value>` stores text; a `+N`/`-N` value increments atomically
+(counters, safe under concurrency). `get <key> [fallback]` sends the value,
+`del <key>` forgets it, `incr <key> [amount]` bumps a counter silently, and
+`$get(key, fallback)` reads state inline. Because variables resolve first,
+dynamic keys like `points[$user]` just work.
+
+```py
+bot = FlowBot(prefix="!")                      # state in ./tflows.db
+bot = FlowBot(prefix="!", state_path=":memory:")  # tests / no persistence
+bot = FlowBot(prefix="!", state_path=None)        # disable state
+```
+
+---
+
+## Scheduled tasks
+
+Run scripts on a timer without blocking the bot:
+
+```py
+bot.schedule("hourly", "send Hourly check-in", interval="1h")
+bot.schedule("standup", code="send Standup time!", interval="5m", channel=123456789)
+bot.schedule("midnight", code="send New day!", cron="0 0 * * *")
+```
+
+- Intervals accept seconds or `"30s"` / `"5m"` / `"1h"` / `"1d"` strings;
+  `cron` accepts 5-field expressions (`minute hour day month weekday`).
+- A leading `every 1h:` / `cron ...:` header inside `code` also works and is
+  ignored when the same script runs as a command.
+- Re-scheduling a name replaces the old task (no duplicates). Tasks start
+  with the bot, stop cleanly via `await bot.scheduler.stop_all()` /
+  `await bot.close()`, and `await bot.scheduler.run_once("hourly")`
+  triggers a run on demand. `bot.unschedule("hourly")` removes one.
+
+---
+
+## Event triggers
+
+React to Discord events with plain scripts — no command invocation needed:
+
+```py
+bot.on_event("join", "send Welcome $user(mention)!")   # member joins
+bot.on_event("leave", "send Bye $user(name)!")         # member leaves
+bot.on_event("react", "send $user(display) reacted!")  # reaction added
+```
+
+A leading `on <event>:` header inside the code is accepted verbatim.
+Supported names include `join`, `leave`/`remove`, `react`/`reaction`,
+`unreact`, `message`, `typing` (see `tflows.events.EVENT_MAP`); new events
+are added by extending that map without changing the language. Handlers are
+removed with `bot.remove_event("join", name)`.
+
+---
+
+## Slash commands
+
+Add a slash variant to any script command — the prefix command keeps working:
+
+```py
+bot.command(
+    name="greet",
+    code="reply Hello $arg(0)!",
+    description="Greet someone",
+    slash=True,
+    slash_params=["name"],
+)
+
+bot.slashcommand(
+    name="roll",
+    code="send Rolled $arg(0)!",
+    description="Roll dice",
+    params=["sides: int"],
+)
+
+# after the bot is ready:
+await bot.sync_commands()
+```
+
+Parameters map positionally into `$args` / `$arg(0)` / `$argcount` and by
+name into `$arg(name)`. Params accept `"name"`, `"name: int|float|bool|str"`,
+`("name", type)` tuples, or dicts. Slash, prefix, event, and scheduled
+scripts can all coexist in one bot.
 
 ---
 
@@ -298,6 +455,7 @@ Alternatively, create an isolated bot with its own registry:
 | `case_insensitive` | `False` | Match command names case-insensitively |
 | `members_intent` | `False` | Enable the privileged members intent |
 | `registry` | shared | Use an isolated `FunctionRegistry` |
+| `state_path` | `"tflows.db"` | SQLite state file (lazy); `":memory:"` for tests, `None` to disable |
 
 ---
 
@@ -310,6 +468,7 @@ See the `examples/` directory:
 - `embeds.py` — block and single-line embeds
 - `automation.py` — `wait`, `react`, `delete`, `clear`
 - `mixing.py` — scripts alongside discord.py cogs
+- `advanced.py` — conditionals, guards, state, schedules, events, slash
 
 Run any example after installing the package:
 

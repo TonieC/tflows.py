@@ -69,6 +69,16 @@ async def test_cooldown_reset_allows_rerun(bot):
     assert sent_text(m2) == ["hi"]
 
 
+async def test_cooldown_entries_pruned(bot):
+    manager = bot.cooldowns
+    now = manager._time()
+    manager._expires = {(f"cmd{i}", "user", "user:1"): now - 1 for i in range(600)}
+    manager._expires[("fresh", "user", "user:1")] = now + 60
+    manager.check("newcmd", "user", "user:2", 60)
+    assert len(manager._expires) < 600
+    assert ("fresh", "user", "user:1") in manager._expires
+
+
 async def test_invalid_cooldown_syntax_warns_and_continues(bot):
     message = await run(bot, "cooldown banana\nsend hi")
     texts = sent_text(message)

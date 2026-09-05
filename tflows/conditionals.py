@@ -28,8 +28,6 @@ import re
 
 _COMPARISON_OPS = ("==", "!=", ">=", "<=", ">", "<")
 
-_WORD_OPS = ("contains", "startswith", "endswith", "in")
-
 _FALSY = {"", "0", "false", "no", "none", "null", "nil", "[]", "{}"}
 
 
@@ -92,16 +90,80 @@ def _compare(left: str, op: str, right: str) -> bool:
 
 
 def _split_top_level(text: str, keyword: str) -> list:
-    """Split ``text`` on ``keyword`` surrounded by whitespace (case-insensitive)."""
+    """Split ``text`` on ``keyword`` surrounded by whitespace (case-insensitive).
+
+    Quoted sections (``"..."`` / ``'...'``) are never split, so conditions
+    like ``"fish and chips" == $arg(0)`` survive intact.
+    """
     pattern = re.compile(rf"\s+{keyword}\s+", re.IGNORECASE)
-    parts, start = [], 0
-    for match in pattern.finditer(text):
-        parts.append(text[start : match.start()])
-        start = match.end()
+    parts, start, quote = [], 0, None
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if quote is not None:
+            if char == quote:
+                quote = None
+        elif char in ("'", '"'):
+            quote = char
+        elif quote is None:
+            match = pattern.match(text, i)
+            if match:
+                parts.append(text[start:i])
+                i = match.end()
+                start = i
+                continue
+        i += 1
     parts.append(text[start:])
     return parts
 
 
+_WORD_OP_RE = re.compile(r"\s+(contains|startswith|endswith|in)\s+", re.IGNORECASE)
+
+
+def _scan_outside_quotes(atom: str):
+    """Yield character indexes that sit outside quoted sections."""
+    quote = None
+    i = 0
+    while i < len(atom):
+        char = atom[i]
+        if quote is not None:
+            if char == quote:
+                quote = None
+        elif char in ("'", '"'):
+            quote = char
+        else:
+            yield i
+        i += 1
+
+
+def _find_comparison(atom: str):
+    """Return ``(left, op, right)`` for the intended comparison.
+
+    Scans outside quotes only. When several operators match (e.g. a value
+    like ``a>=b`` next to a real ``==``), an operator padded with whitespace
+    on both sides wins; otherwise the leftmost match wins. This keeps
+    ``$arg(0) == "a>=b"`` working while ``2>=2`` still parses.
+    """
+    fallback = None
+    for i in _scan_outside_quotes(atom):
+        for op in _COMPARISON_OPS:  # longest-first so >= wins over >
+            if atom.startswith(op, i):
+                if fallback is None:
+                    fallback = (atom[:i], op, atom[i + len(op):])
+                before = atom[i - 1] if i > 0 else " "
+                after = atom[i + len(op)] if i + len(op) < len(atom) else " "
+                if before.isspace() and after.isspace():
+                    return (atom[:i], op, atom[i + len(op):])
+    return fallback
+
+
+def _find_word_op(atom: str):
+    """Return ``(left, op, right)`` for the first word operator outside quotes."""
+    for i in _scan_outside_quotes(atom):
+        match = _WORD_OP_RE.match(atom, i)
+        if match:
+            return (atom[:i], match.group(1).lower(), atom[match.end():])
+    return None
 def _eval_atom(atom: str) -> bool:
     atom = atom.strip()
     if not atom:
@@ -122,26 +184,18 @@ def _eval_atom(atom: str) -> bool:
     result = False
     matched = False
 
-    for op in _COMPARISON_OPS:
-        if op in atom:
-            left, _, right = atom.partition(op)
-            # Guard against `>=` being split as `>` + `=...`: partition on
-            # the first occurrence is fine because ops are ordered longest-first
-            # only when checking; instead re-derive: if op is >/</= variants,
-            # ensure we matched the longest operator at this position.
-            if op in (">", "<") and (left.endswith("=") or right.startswith("=")):
-                continue
-            result = _compare(left, op, right)
-            matched = True
-            break
+    found = _find_comparison(atom)
+    if found is not None:
+        left, op, right = found
+        result = _compare(left, op, right)
+        matched = True
 
     if not matched:
-        for op in _WORD_OPS:
-            pieces = re.split(rf"\s+{op}\s+", atom, maxsplit=1, flags=re.IGNORECASE)
-            if len(pieces) == 2:
-                result = _compare(pieces[0], op, pieces[1])
-                matched = True
-                break
+        found = _find_word_op(atom)
+        if found is not None:
+            left, op, right = found
+            result = _compare(left, op, right)
+            matched = True
 
     if not matched:
         result = _strip_quotes(atom).lower() not in _FALSY
@@ -198,4 +252,4 @@ def is_else(stripped: str) -> bool:
 
 def is_endif(stripped: str) -> bool:
     low = stripped.lower().rstrip(":").strip()
-    return low in ("endif", "end if", "end")
+    return low in ("endif", "end if")

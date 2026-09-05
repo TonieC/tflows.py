@@ -4,6 +4,10 @@ All notable changes to tflows are documented here.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [1.0.1] - 2026-09-06
+
 ### Added
 
 - **Conditionals**: `if` / `elif` / `else` / `endif` with `==`, `!=`, `>`,

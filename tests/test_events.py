@@ -132,3 +132,11 @@ async def test_events_and_prefix_coexist(bot):
 async def test_normalize_event_aliases():
     assert normalize_event("member_join") == "on_member_join"
     assert normalize_event("Reaction Add") == "on_reaction_add"
+
+
+async def test_on_event_with_channel_id_does_not_crash(bot):
+    handle = bot.on_event("join", "send hi", channel=123456)
+    assert isinstance(handle, str)
+    member = FakeUser(id=22, name="NoChan")
+    member.guild = FakeGuild()
+    await bot.dispatch_event("on_member_join", member)  # NullChannel absorbs it

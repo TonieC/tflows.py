@@ -108,8 +108,12 @@ class CooldownManager:
         """Return seconds remaining, or 0 when the command may run.
 
         When the command may run, the cooldown window is (re)started.
+        Expired entries are pruned opportunistically so per-user buckets
+        cannot grow without bound.
         """
         now = self._time()
+        if len(self._expires) > 512:
+            self._expires = {k: v for k, v in self._expires.items() if v > now}
         key = (command, scope, scope_key)
         remaining = self._expires.get(key, 0) - now
         if remaining > 0:

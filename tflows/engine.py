@@ -337,19 +337,17 @@ class Engine:
 
             if is_endif(stripped):
                 if stack:
-                    # Only treat as a terminator when it closes a block at a
-                    # compatible indent; otherwise fall through to dispatch.
-                    if indent <= stack[-1]["if_indent"] or not stack[-1]["saw_body"]:
-                        stack.pop()
-                        i += 1
-                        continue
-                # Outside any if-block (or incompatible): unknown function path.
-                if not stack and active():
-                    try:
-                        await self.execute_line(ctx, stripped)
-                    except Exception:
-                        if log_errors:
-                            logger.exception("[tflow] Error in line: %s", stripped)
+                    # Explicit terminator: always closes the innermost block.
+                    stack.pop()
+                    i += 1
+                    continue
+                # Outside any if-block: fall through to the unknown-function
+                # path, preserving historical behavior for stray lines.
+                try:
+                    await self.execute_line(ctx, stripped)
+                except Exception:
+                    if log_errors:
+                        logger.exception("[tflow] Error in line: %s", stripped)
                 i += 1
                 continue
 

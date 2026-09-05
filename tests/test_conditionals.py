@@ -152,3 +152,22 @@ async def test_embed_inside_conditional(bot):
     assert message.channel.sent[0][1]["embed"].title == "Hi"
     message = await run(bot, code, args="")
     assert message.channel.sent == []
+
+
+async def test_quoted_strings_with_keywords(bot):
+    assert sent(await run(bot, 'if "fish and chips" == "fish and chips":\n    send yes')) == ["yes"]
+    assert sent(await run(bot, 'if "a or b" == "a or b":\n    send yes')) == ["yes"]
+    assert sent(await run(bot, 'if "a == b" == "a == b":\n    send yes')) == ["yes"]
+    assert sent(await run(bot, 'if "x" == "y":\n    send yes')) == []
+
+
+async def test_endif_at_deeper_indent_still_closes(bot):
+    code = "if $argcount > 0:\n    send inside\n    endif\nsend after"
+    assert sent(await run(bot, code, args="x")) == ["inside", "after"]
+    assert sent(await run(bot, code, args="")) == ["after"]
+
+
+async def test_quoted_value_with_comparison_chars(bot):
+    message = await run(bot, "send hi", args="a>=b")
+    assert sent(message) == ["hi"]
+    assert sent(await run(bot, 'if $arg(0) == "a>=b":\n    send yes', args="a>=b")) == ["yes"]

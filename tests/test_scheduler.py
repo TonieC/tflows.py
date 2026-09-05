@@ -44,6 +44,23 @@ def test_cron_next_occurrence_reasonable():
     assert 1 <= sched.seconds_until_next() <= 61
 
 
+def test_cron_sunday_alias_and_day_semantics():
+    assert CronSchedule("* * * * 7").weekdays == CronSchedule("* * * * 0").weekdays
+    both = CronSchedule("0 0 1 * 1")
+    assert both.dom_restricted and both.dow_restricted
+    assert both._day_matches(1, 3) is True   # 1st, any weekday
+    assert both._day_matches(5, 1) is True   # Monday, any date
+    assert both._day_matches(5, 3) is False
+    dom_only = CronSchedule("0 0 15 * *")
+    assert dom_only._day_matches(15, 3) is True
+    assert dom_only._day_matches(16, 3) is False
+
+
+def test_cron_bad_value_message():
+    with pytest.raises(ValueError):
+        CronSchedule("0 0 * * banana")
+
+
 async def test_schedule_registers_task(bot):
     channel = FakeChannel()
     task = bot.schedule("tick", "send tick", interval="60s", channel=channel)

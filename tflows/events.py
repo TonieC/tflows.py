@@ -69,7 +69,7 @@ def normalize_event(name: str) -> str:
 
 
 class EventRegistry:
-    """Stores ``event -> [(name, code)]`` script handlers for a bot."""
+    """Stores ``listener -> [(handle_name, code, channel)]`` script handlers."""
 
     def __init__(self):
         self.handlers: dict = {}

@@ -202,6 +202,11 @@ class FlowBot(commands.Bot):
             The registered command object.
         """
         aliases = tuple(aliases or ())
+        if slash_params and not slash:
+            logger.warning(
+                "[tflow] slash_params given without slash=True for command %r; ignoring",
+                name,
+            )
         params = parse_slash_params(slash_params) if slash else []
         command = ScriptCommand(
             name=name, code=code, description=description, aliases=aliases,
@@ -228,9 +233,10 @@ class FlowBot(commands.Bot):
         except Exception:
             logger.exception("[tflow] Failed to build slash command %r", command.name)
             raise
-        existing = self.tree.get_command(command.name)
+        app_name = app_command.name
+        existing = self.tree.get_command(app_name)
         if existing is not None:
-            self.tree.remove_command(command.name)
+            self.tree.remove_command(app_name)
         self.tree.add_command(app_command)
         self.slash_commands[command.name] = app_command
         return app_command
@@ -283,8 +289,14 @@ class FlowBot(commands.Bot):
     def on_event(self, event, code, name=None, channel=None):
         """Run ``code`` whenever ``event`` fires (``"join"``, ``"leave"``,
         ``"react"``, ...). Returns the handler name; remove it later with
-        :meth:`remove_event`. ``channel`` overrides the send destination.
+        :meth:`remove_event`. ``channel`` (or channel id) overrides the send
+        destination.
         """
+        if channel is not None and not hasattr(channel, "send"):
+            try:
+                channel = self.get_channel(int(channel))
+            except Exception:
+                channel = None
         handle = self.events.add(event, code, name=name, channel=channel)
         return handle
 

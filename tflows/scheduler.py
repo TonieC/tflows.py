@@ -3,7 +3,7 @@
 Python API::
 
     bot.schedule("hourly", code="send Hourly check-in", interval="1h",
-                 channel_id=123456789)
+                 channel=123456789)
     bot.schedule("fast", code="send hi", interval=30)  # seconds
 
 Script-header style (the ``every`` / ``cron`` first line is informational;
@@ -67,13 +67,16 @@ def _parse_cron_field(field: str, minimum: int, maximum: int) -> set:
                 step = max(1, int(step_s))
             except ValueError:
                 raise ValueError(f"bad cron step: {field!r}") from None
-        if part in ("*", ""):
-            lo, hi = minimum, maximum
-        elif "-" in part:
-            lo_s, _, hi_s = part.partition("-")
-            lo, hi = int(lo_s), int(hi_s)
-        else:
-            lo = hi = int(part)
+        try:
+            if part in ("*", ""):
+                lo, hi = minimum, maximum
+            elif "-" in part:
+                lo_s, _, hi_s = part.partition("-")
+                lo, hi = int(lo_s), int(hi_s)
+            else:
+                lo = hi = int(part)
+        except ValueError:
+            raise ValueError(f"bad cron value: {part!r} in {field!r}") from None
         if lo < minimum or hi > maximum or lo > hi:
             raise ValueError(f"cron value out of range: {field!r}")
         values.update(range(lo, hi + 1, step))
@@ -81,7 +84,12 @@ def _parse_cron_field(field: str, minimum: int, maximum: int) -> set:
 
 
 class CronSchedule:
-    """Minimal 5-field cron (minute hour day month weekday)."""
+    """Minimal 5-field cron (minute hour day month weekday).
+
+    Follows standard cron day semantics: when both day-of-month and weekday
+    are restricted, a minute matches if *either* matches. ``7`` is accepted
+    as an alias for Sunday in the weekday field.
+    """
 
     def __init__(self, expression: str):
         fields = expression.split()
@@ -89,11 +97,24 @@ class CronSchedule:
             raise ValueError(
                 f"cron needs 5 fields (minute hour day month weekday), got: {expression!r}"
             )
+        # Sunday may be written as 0 or 7.
+        fields[4] = re.sub(r"(?<![0-9])7(?![0-9])", "0", fields[4])
         self.minutes = _parse_cron_field(fields[0], 0, 59)
         self.hours = _parse_cron_field(fields[1], 0, 23)
         self.days = _parse_cron_field(fields[2], 1, 31)
         self.months = _parse_cron_field(fields[3], 1, 12)
         self.weekdays = _parse_cron_field(fields[4], 0, 6)
+        self.dom_restricted = fields[2].strip() != "*"
+        self.dow_restricted = fields[4].strip() != "*"
+
+    def _day_matches(self, day: int, cron_dow: int) -> bool:
+        if self.dom_restricted and self.dow_restricted:
+            return day in self.days or cron_dow in self.weekdays
+        if self.dom_restricted:
+            return day in self.days
+        if self.dow_restricted:
+            return cron_dow in self.weekdays
+        return True
 
     def seconds_until_next(self, now=None) -> float:
         import datetime as _dt
@@ -106,9 +127,8 @@ class CronSchedule:
             if (
                 probe.minute in self.minutes
                 and probe.hour in self.hours
-                and probe.day in self.days
                 and probe.month in self.months
-                and cron_dow in self.weekdays
+                and self._day_matches(probe.day, cron_dow)
             ):
                 return max(1.0, (probe - now).total_seconds())
             probe += _dt.timedelta(minutes=1)
@@ -192,12 +212,12 @@ class Scheduler:
         """
         if interval is None and cron is None:
             for line in (code or "").split("\n"):
-                line = line.strip()
-                if not line:
+                stripped = line.strip()
+                if not stripped or stripped.startswith(("//", "#", "--")):
                     continue
-                interval = parse_every_header(line)
+                interval = parse_every_header(stripped)
                 if interval is None:
-                    cron = parse_cron_header(line)
+                    cron = parse_cron_header(stripped)
                 break
         if isinstance(interval, str):
             interval = parse_duration(interval)

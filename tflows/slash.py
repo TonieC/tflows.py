@@ -56,9 +56,14 @@ def parse_slash_params(params) -> list:
             if ":" in item:
                 name, _, type_name = item.partition(":")
                 type_name = type_name.strip().lower()
+                if type_name not in _PARAM_TYPES:
+                    raise ValueError(
+                        f"unknown slash param type {type_name!r} in {item!r}; "
+                        "expected str, int, float or bool"
+                    )
             else:
                 name, type_name = item, "str"
-            py_type = _PARAM_TYPES.get(type_name, str)
+            py_type = _PARAM_TYPES[type_name]
             normalized.append((_sanitize_param_name(name), py_type))
         elif isinstance(item, (tuple, list)) and len(item) == 2:
             name, py_type = item
@@ -194,7 +199,7 @@ def build_slash_command(bot, script_command, params: list):
     callback = build_slash_callback(bot, script_command.name, params)
 
     # app_commands derives parameters from the callback signature, so
-    # generate one with explicit annotated keyword-only parameters.
+    # generate one with explicit annotated parameters (defaults = optional).
     type_names = {str: "str", int: "int", float: "float", bool: "bool"}
     lines = ["async def _cb(interaction: discord.Interaction,"]
     for name, py_type in params:
