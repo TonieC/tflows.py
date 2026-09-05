@@ -21,14 +21,26 @@ class FakeUser:
         self.created_at = datetime(2020, 1, 1)
         self.joined_at = datetime(2021, 6, 1)
         self.display_avatar = type("A", (), {"url": f"https://example.com/{id}.png"})()
+        self.roles = []
+        self.guild_permissions = FakePermissions()
 
     def __str__(self):
         return self.name
 
 
+class FakeRole:
+    def __init__(self, name):
+        self.name = name
+
+
 class FakePermissions:
     def __init__(self, **kwargs):
         self.manage_messages = kwargs.get("manage_messages", True)
+        self.administrator = kwargs.get("administrator", False)
+        self.kick_members = kwargs.get("kick_members", False)
+        self.ban_members = kwargs.get("ban_members", False)
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
 class FakeGuild:
@@ -44,13 +56,14 @@ class FakeGuild:
         self.created_at = datetime(2019, 1, 1)
         self.members = members or [FakeUser(i, f"User{i}") for i in range(8)]
         self.me = FakeUser(id=1, name="TestBot", bot=True)
+        self.system_channel = None
 
     def permissions_for(self, user):
         return FakePermissions()
 
 
 class FakeChannel:
-    def __init__(self, name="general"):
+    def __init__(self, name="general", permissions=None):
         self.name = name
         self.id = 555
         self.topic = "General discussion"
@@ -62,9 +75,10 @@ class FakeChannel:
         self.mention = f"<#{self.id}>"
         self.sent = []
         self.purged = []
+        self._permissions = permissions if permissions is not None else FakePermissions()
 
     def permissions_for(self, user):
-        return FakePermissions()
+        return self._permissions
 
     async def send(self, *args, **kwargs):
         self.sent.append((args, kwargs))
@@ -121,6 +135,7 @@ class FakeMessage:
 
 
 def make_bot(**kwargs):
+    kwargs.setdefault("state_path", ":memory:")
     bot = FlowBot(prefix=kwargs.pop("prefix", "!"), **kwargs)
     bot._connection.user = FakeUser(id=1, name="TestBot", bot=True)
     return bot

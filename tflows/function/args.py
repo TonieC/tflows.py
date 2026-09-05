@@ -29,6 +29,11 @@ def _arg_var(ctx, args):
     try:
         index = int(spec)
     except ValueError:
+        # Named slash-command parameter: $arg(name).
+        kwargs = getattr(ctx, "kwargs", None) or {}
+        for key, value in kwargs.items():
+            if key.lower() == spec.lower():
+                return str(value)
         return ""
 
     if index < 0:
