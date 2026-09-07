@@ -37,6 +37,36 @@ def guild_namespace(ctx) -> str:
     return str(getattr(guild, "id", "global"))
 
 
+_SCOPE_PREFIXES = ("user.", "channel.", "guild.", "server.", "global.")
+
+
+def parse_scoped_key(ctx, key: str) -> tuple[str, str]:
+    """Split ``user.points[$user]`` into ``(namespace, key)``.
+
+    Scopes:
+    - ``user.``  — per-user, isolated even across guilds (``user:<id>``)
+    - ``channel.`` — per-channel (``channel:<id>``)
+    - ``guild.`` / ``server.`` — per-guild (same as the default namespace)
+    - ``global.`` — process-wide (``global``), shared across guilds
+    Unprefixed keys keep the historical per-guild namespace.
+    """
+    raw = (key or "").strip()
+    lowered = raw.lower()
+    if lowered.startswith("user."):
+        author = getattr(ctx, "author", None)
+        uid = getattr(author, "id", "?")
+        return f"user:{uid}", raw.split(".", 1)[1]
+    if lowered.startswith("channel."):
+        channel = getattr(ctx, "channel", None)
+        cid = getattr(channel, "id", "?")
+        return f"channel:{cid}", raw.split(".", 1)[1]
+    if lowered.startswith("guild.") or lowered.startswith("server."):
+        return guild_namespace(ctx), raw.split(".", 1)[1]
+    if lowered.startswith("global."):
+        return "global", raw.split(".", 1)[1]
+    return guild_namespace(ctx), raw
+
+
 def format_value(value) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"

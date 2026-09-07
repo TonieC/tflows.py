@@ -22,6 +22,13 @@ def load_function(registry):
     except Exception:
         logger.exception("[tflow] Failed to set up built-ins")
 
+    try:
+        from . import http as http_mod
+
+        http_mod.setup(registry)
+    except Exception:
+        logger.exception("[tflow] Failed to set up HTTP/JSON helpers")
+
     base = os.path.join(os.path.dirname(__file__), "function")
 
     if not os.path.isdir(base):

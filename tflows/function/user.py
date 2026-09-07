@@ -1,5 +1,6 @@
 def _user_info(ctx, args):
-    author = ctx.author
+    extras = getattr(ctx, "extras", None) or {}
+    author = extras.get("user") or extras.get("author") or ctx.author
     arg = (args or "").strip().lower()
 
     if arg in ("", "name", "username"):

@@ -23,12 +23,14 @@ from typing import Any
 import discord
 from discord.ext import commands
 
+from .components import ComponentRegistry, interaction_inputs, interaction_value
 from .context import FlowContext
 from .engine import Engine
-from .events import EVENT_MAP, EventRegistry
+from .events import EVENT_MAP, EventRegistry, matches_filter
 from .guards import CooldownManager
 from .loader import load_function
 from .registry import registry
+from .runtime import ScriptFunction
 from .scheduler import Scheduler
 from .slash import build_slash_command, parse_slash_params
 from .state import StateStore
@@ -110,6 +112,10 @@ class FlowBot(commands.Bot):
         reg = kwargs.pop("registry", None) or registry
         self._state_path = kwargs.pop("state_path", "tflows.db")
         self._state_store: StateStore | None = None
+        self.allow_http = kwargs.pop("allow_http", False)
+        self.http_allowlist = kwargs.pop("http_allowlist", None)
+        self.allow_insecure_http = kwargs.pop("allow_insecure_http", False)
+        self.script_root = kwargs.pop("script_root", None)
 
         intents = kwargs.pop("intents", None)
         if intents is None:
@@ -132,9 +138,16 @@ class FlowBot(commands.Bot):
         self.script_commands: dict[str, ScriptCommand] = {}
         self.slash_commands: dict[str, Any] = {}
         self.engine = Engine(reg)
+        self.engine.script_root = self.script_root
         self.cooldowns = CooldownManager()
         self.scheduler = Scheduler(self)
         self.events = EventRegistry()
+        self.components = ComponentRegistry()
+        self.modals: dict = {}
+        self.script_functions: dict[str, ScriptFunction] = {}
+        self.context_menus: dict[str, Any] = {}
+        self._loaded_files: dict[str, dict] = {}
+        self._watch_task = None
 
         load_function(reg)
 
@@ -145,6 +158,7 @@ class FlowBot(commands.Bot):
         self.add_listener(self._tflow_on_reaction_add, "on_reaction_add")
         self.add_listener(self._tflow_on_reaction_remove, "on_reaction_remove")
         self.add_listener(self._tflow_on_typing, "on_typing")
+        self.add_listener(self._tflow_on_interaction, "on_interaction")
 
     # ------------------------------------------------------------------
     # Persistent state (lazy so unused bots pay nothing)
@@ -163,6 +177,8 @@ class FlowBot(commands.Bot):
 
     async def close(self):
         try:
+            if self._watch_task is not None and not self._watch_task.done():
+                self._watch_task.cancel()
             await self.scheduler.stop_all()
         finally:
             if self._state_store is not None:
@@ -286,18 +302,18 @@ class FlowBot(commands.Bot):
     # ------------------------------------------------------------------
     # Event triggers
     # ------------------------------------------------------------------
-    def on_event(self, event, code, name=None, channel=None):
+    def on_event(self, event, code, name=None, channel=None, where=None):
         """Run ``code`` whenever ``event`` fires (``"join"``, ``"leave"``,
         ``"react"``, ...). Returns the handler name; remove it later with
         :meth:`remove_event`. ``channel`` (or channel id) overrides the send
-        destination.
+        destination. ``where`` is an optional filter expression.
         """
         if channel is not None and not hasattr(channel, "send"):
             try:
                 channel = self.get_channel(int(channel))
             except Exception:
                 channel = None
-        handle = self.events.add(event, code, name=name, channel=channel)
+        handle = self.events.add(event, code, name=name, channel=channel, where=where)
         return handle
 
     def remove_event(self, event, name) -> bool:
@@ -312,7 +328,16 @@ class FlowBot(commands.Bot):
         for entry in entries:
             handle_name, code = entry[0], entry[1]
             fixed_channel = entry[2] if len(entry) > 2 else None
+            where = entry[3] if len(entry) > 3 else None
             ctx = self._event_context(listener, args, fixed_channel, command_name=handle_name)
+            if where:
+                try:
+                    if not await matches_filter(ctx, self.engine, where):
+                        continue
+                except Exception:
+                    if self.log_errors:
+                        logger.exception("[tflow] Event filter failed for %r", handle_name)
+                    continue
             try:
                 await self.engine.run(ctx, code)
             except Exception:
@@ -321,32 +346,50 @@ class FlowBot(commands.Bot):
 
     def _event_context(self, listener, args, fixed_channel, command_name=None) -> FlowContext:
         channel, author, guild = fixed_channel, None, None
+        extras = {}
+        source_message = None
         try:
             if listener in ("on_member_join", "on_member_remove"):
                 (member,) = args
                 author, guild = member, getattr(member, "guild", None)
                 channel = fixed_channel or getattr(guild, "system_channel", None)
+                extras["user"] = member
             elif listener in ("on_reaction_add", "on_reaction_remove"):
                 reaction, user = args
                 author = user
                 message = getattr(reaction, "message", None)
+                source_message = message
                 channel = fixed_channel or getattr(message, "channel", None)
                 guild = getattr(message, "guild", None)
+                extras["user"] = user
+                extras["emoji"] = str(getattr(reaction, "emoji", ""))
+                extras["message"] = message
             elif listener == "on_typing":
                 channel, user = args[0], args[1]
                 author = user
                 guild = getattr(channel, "guild", None)
                 if fixed_channel is not None:
                     channel = fixed_channel
+                extras["user"] = user
             elif listener == "on_message_event":
                 (message,) = args
+                source_message = message
                 author = getattr(message, "author", None)
                 channel = fixed_channel or getattr(message, "channel", None)
                 guild = getattr(message, "guild", None)
+                extras["user"] = author
+                extras["message"] = message
+                extras["content"] = getattr(message, "content", "") or ""
         except Exception:
             logger.exception("[tflow] Failed to build event context for %s", listener)
         return FlowContext.for_event(
-            self, channel=channel, author=author, guild=guild, command_name=command_name
+            self,
+            channel=channel,
+            author=author,
+            guild=guild,
+            command_name=command_name,
+            extras=extras,
+            message=source_message,
         )
 
     async def _tflow_on_member_join(self, member):
@@ -369,6 +412,281 @@ class FlowBot(commands.Bot):
         if getattr(user, "bot", False):
             return
         await self.dispatch_event("on_typing", channel, user, when)
+
+    async def _tflow_on_interaction(self, interaction):
+        if getattr(getattr(interaction, "user", None), "bot", False):
+            return
+        await self.dispatch_interaction(interaction)
+
+    def bind_component(self, kind: str, custom_id: str, code: str) -> None:
+        """Register (or replace) a persistent component handler."""
+        self.components.bind(kind, custom_id, code)
+
+    async def dispatch_interaction(self, interaction) -> None:
+        """Run the script bound to an interaction's custom id."""
+        data = getattr(interaction, "data", None) or {}
+        custom_id = ""
+        if isinstance(data, dict):
+            custom_id = data.get("custom_id") or ""
+        custom_id = custom_id or getattr(interaction, "custom_id", "") or ""
+        kind_hint = None
+        itype = getattr(interaction, "type", None)
+        try:
+            import discord
+
+            if itype == discord.InteractionType.component:
+                component_type = data.get("component_type") if isinstance(data, dict) else None
+                if component_type == 3:
+                    kind_hint = "select"
+                else:
+                    kind_hint = "button"
+            elif itype == discord.InteractionType.modal_submit:
+                kind_hint = "modal"
+        except Exception:
+            pass
+        bound = self.components.get(custom_id) if custom_id else None
+        extras = {
+            "interaction": interaction,
+            "user": getattr(interaction, "user", None),
+            "value": interaction_value(interaction),
+            "input": interaction_inputs(interaction),
+            "inputs": interaction_inputs(interaction),
+        }
+        if bound is None and kind_hint:
+            listener = {"button": "on_button", "select": "on_select", "modal": "on_modal"}.get(kind_hint)
+            if listener:
+                await self.dispatch_event(listener, interaction)
+            return
+        if bound is None:
+            return
+        kind, code = bound
+        ctx = FlowContext.for_interaction(
+            self, interaction, command_name=custom_id, extras=extras
+        )
+        try:
+            await self.engine.run(ctx, code)
+        except Exception:
+            if self.log_errors:
+                logger.exception("[tflow] Error in %s handler %r", kind, custom_id)
+
+    # ------------------------------------------------------------------
+    # Script files / hot reload
+    # ------------------------------------------------------------------
+    def load(self, path: str, *, replace: bool = False):
+        """Load a ``.flow`` file: functions, commands, events, schedules.
+
+        When ``replace`` is True (used by reload), previous registrations
+        from the same file are removed first so handlers are not duplicated.
+        """
+        from .diagnostics import check_source
+        from .scripts import parse_document
+        from pathlib import Path
+
+        p = Path(path)
+        source = p.read_text(encoding="utf-8")
+        issues = [d for d in check_source(source, filename=str(p)) if d.severity == "error"]
+        if issues:
+            raise SyntaxError("\n".join(str(d) for d in issues))
+        key = str(p.resolve())
+        if replace and key in self._loaded_files:
+            self._unload_file(key)
+        doc = parse_document(source, filename=key)
+        handles = self._apply_document(doc, key)
+        self._loaded_files[key] = {
+            "mtime": p.stat().st_mtime,
+            "doc": doc,
+            "path": key,
+            "handles": handles,
+        }
+        if self.script_root is None:
+            self.script_root = str(p.parent)
+            self.engine.script_root = self.script_root
+        return doc
+
+    def _apply_document(self, doc, key: str) -> dict:
+        handles = {
+            "functions": [],
+            "commands": [],
+            "events": [],
+            "components": [],
+            "menus": [],
+            "schedules": [],
+        }
+        for name, fn in doc["functions"].items():
+            self.script_functions[name] = fn
+            self.engine.script_functions[name] = fn
+            handles["functions"].append(name)
+        for command in doc["commands"]:
+            self.command(command["name"], command["code"])
+            handles["commands"].append(command["name"])
+        for index, event in enumerate(doc["events"]):
+            if event.get("custom_id"):
+                self.bind_component(event["event"], event["custom_id"], event["code"])
+                handles["components"].append(event["custom_id"])
+            else:
+                handle = self.on_event(
+                    event["event"],
+                    event["code"],
+                    name=f"{key}::{event['event']}::{index}",
+                    where=event.get("where"),
+                )
+                handles["events"].append((event["event"], handle))
+        for menu in doc.get("context_menus") or []:
+            self.context_menu(menu["kind"], menu["name"], menu["code"])
+            handles["menus"].append(menu["name"])
+        for index, schedule in enumerate(doc.get("schedules") or []):
+            from pathlib import Path as _Path
+
+            name = f"{_Path(key).stem}::{index}"
+            self.schedule(name, schedule["header"] + "\n" + schedule["code"])
+            handles["schedules"].append(name)
+        return handles
+
+    def _unload_file(self, key: str) -> None:
+        info = self._loaded_files.get(key) or {}
+        doc = info.get("doc") or {}
+        handles = info.get("handles") or {}
+        for name in handles.get("functions") or (doc.get("functions") or {}):
+            self.script_functions.pop(name, None)
+            self.engine.script_functions.pop(name, None)
+        for command in doc.get("commands") or []:
+            existing = self.script_commands.pop(command["name"], None)
+            if existing is not None:
+                self.commands_map.pop(command["name"], None)
+                for alias in existing.aliases:
+                    self.commands_map.pop(alias, None)
+                if existing.slash:
+                    try:
+                        self.tree.remove_command(command["name"])
+                    except Exception:
+                        pass
+                    self.slash_commands.pop(command["name"], None)
+        for event_name, handle in handles.get("events") or []:
+            try:
+                self.remove_event(event_name, handle)
+            except Exception:
+                pass
+        for custom_id in handles.get("components") or []:
+            self.components.remove(custom_id)
+        for menu_name in handles.get("menus") or []:
+            self.context_menus.pop(menu_name, None)
+            try:
+                self.tree.remove_command(menu_name)
+            except Exception:
+                pass
+        for schedule_name in handles.get("schedules") or []:
+            self.unschedule(schedule_name)
+
+    async def reload(self, path: str | None = None) -> list:
+        """Reload loaded script files. Returns a list of error strings.
+
+        On syntax error the previous working version is kept. Persistent
+        state is not touched. Duplicate commands/functions from the same
+        file are replaced, not stacked.
+        """
+        from pathlib import Path
+
+        errors = []
+        targets = [path] if path else list(self._loaded_files)
+        for target in targets:
+            try:
+                p = Path(target)
+                if not p.is_file():
+                    errors.append(f"{target}: not found")
+                    continue
+                self.load(str(p), replace=True)
+            except SyntaxError as exc:
+                errors.append(f"{target}: {exc}")
+                logger.warning("[tflow] reload skipped (syntax error): %s", exc)
+            except Exception as exc:
+                errors.append(f"{target}: {exc}")
+                if self.log_errors:
+                    logger.exception("[tflow] reload failed for %s", target)
+        return errors
+
+    def watch(self, interval: float = 1.0):
+        """Start a background task that reloads changed ``.flow`` files."""
+
+        async def _loop():
+            from pathlib import Path
+
+            try:
+                while True:
+                    await asyncio.sleep(interval)
+                    for key, info in list(self._loaded_files.items()):
+                        try:
+                            mtime = Path(key).stat().st_mtime
+                        except OSError:
+                            continue
+                        if mtime > info.get("mtime", 0):
+                            await self.reload(key)
+            except asyncio.CancelledError:
+                pass
+
+        if self._watch_task is not None and not self._watch_task.done():
+            return self._watch_task
+        self._watch_task = asyncio.ensure_future(_loop())
+        return self._watch_task
+
+    def context_menu(self, kind: str, name: str, code: str):
+        """Register a user or message context-menu command."""
+        import discord
+
+        kind = (kind or "").strip().lower()
+        if kind not in ("user", "message"):
+            raise ValueError("context menu kind must be 'user' or 'message'")
+        bot = self
+        script = code
+        menu_name = name
+
+        if kind == "user":
+            async def _user_callback(interaction: discord.Interaction, user: discord.User):
+                extras = {
+                    "interaction": interaction,
+                    "user": getattr(interaction, "user", None),
+                    "target": user,
+                    "target_user": user,
+                }
+                ctx = FlowContext.for_interaction(
+                    bot, interaction, command_name=menu_name, extras=extras
+                )
+                try:
+                    await bot.engine.run(ctx, script)
+                except Exception:
+                    if bot.log_errors:
+                        logger.exception("[tflow] Error in context menu %r", menu_name)
+
+            callback = _user_callback
+        else:
+            async def _message_callback(interaction: discord.Interaction, message: discord.Message):
+                extras = {
+                    "interaction": interaction,
+                    "user": getattr(interaction, "user", None),
+                    "target": message,
+                    "message": message,
+                    "content": getattr(message, "content", "") or "",
+                }
+                ctx = FlowContext.for_interaction(
+                    bot, interaction, command_name=menu_name, extras=extras
+                )
+                try:
+                    await bot.engine.run(ctx, script)
+                except Exception:
+                    if bot.log_errors:
+                        logger.exception("[tflow] Error in context menu %r", menu_name)
+
+            callback = _message_callback
+
+        cmd = discord.app_commands.ContextMenu(name=name, callback=callback)
+        try:
+            existing = self.tree.get_command(name)
+            if existing is not None:
+                self.tree.remove_command(name)
+            self.tree.add_command(cmd)
+        except Exception:
+            logger.exception("[tflow] Failed to register context menu %r", name)
+        self.context_menus[name] = cmd
+        return cmd
 
     # ------------------------------------------------------------------
     # Message handling
@@ -427,7 +745,14 @@ class FlowBot(commands.Bot):
 
         command = self._resolve_command(name)
         if command is not None:
-            ctx = FlowContext(message=message, bot=self, command_name=command.name, args=args)
+            extras = {
+                "message": message,
+                "user": message.author,
+                "content": message.content or "",
+            }
+            ctx = FlowContext(
+                message=message, bot=self, command_name=command.name, args=args, extras=extras
+            )
             try:
                 await self.engine.run(ctx, command.code)
             except Exception:

@@ -62,4 +62,26 @@ bot.slashcommand(
 bot.on_event("join", "send Welcome $user(mention)!")
 bot.on_event("react", "send $user(display) reacted!")
 
+# --- Locals, loops, script functions ----------------------------------------
+bot.command(
+    name="sum",
+    code="""
+let total = 0
+for n in 1, 2, 3, 4:
+    total = total + n
+send total=$total
+    """,
+    description="Sum 1..4 with a loop.",
+)
+
+# --- Scoped state -----------------------------------------------------------
+bot.command(
+    name="xp",
+    code="""
+set user.xp +1
+reply You have $get(user.xp, 0) XP.
+    """,
+    description="Per-user XP counter.",
+)
+
 TOKEN = os.getenv("DISCORD_TOKEN")

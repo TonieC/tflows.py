@@ -42,6 +42,12 @@ def _namespace(ctx) -> str:
     return guild_namespace(ctx)
 
 
+def _scope(ctx, key: str) -> tuple[str, str]:
+    from ..state import parse_scoped_key
+
+    return parse_scoped_key(ctx, key)
+
+
 def setup(registry):
     @registry.register("set")
     async def set_value(ctx, args):
@@ -52,7 +58,7 @@ def setup(registry):
         key = parts[0]
         value = parts[1] if len(parts) > 1 else ""
         store = _store(ctx)
-        namespace = _namespace(ctx)
+        namespace, key = _scope(ctx, key)
         if _INCR_RE.match(value.strip()):
             delta = float(value.strip())
             await store.incr(namespace, key, int(delta) if delta.is_integer() else delta)
@@ -68,7 +74,8 @@ def setup(registry):
         key = parts[0]
         fallback = parts[1] if len(parts) > 1 else None
         store = _store(ctx)
-        value = await store.get(_namespace(ctx), key, default=fallback)
+        namespace, key = _scope(ctx, key)
+        value = await store.get(namespace, key, default=fallback)
         if value is None or (isinstance(value, str) and not value):
             return
         await ctx.channel.send(str(value))
@@ -79,7 +86,8 @@ def setup(registry):
         parts = (args or "").split(None, 1)
         if not parts:
             return
-        await _store(ctx).delete(_namespace(ctx), parts[0])
+        namespace, key = _scope(ctx, parts[0])
+        await _store(ctx).delete(namespace, key)
 
     @registry.register("incr")
     async def incr_value(ctx, args):
@@ -91,19 +99,21 @@ def setup(registry):
             delta = float(parts[1]) if len(parts) > 1 else 1
         except ValueError:
             delta = 1
+        namespace, key = _scope(ctx, parts[0])
         await _store(ctx).incr(
-            _namespace(ctx), parts[0], int(delta) if float(delta).is_integer() else delta
+            namespace, key, int(delta) if float(delta).is_integer() else delta
         )
 
     @registry.register_var("get")
     async def get_var(ctx, args):
         """Inline read ``$get(key)`` / ``$get(key, fallback)``."""
-        parts = [p.strip() for p in (args or "").split(",", 1)]
+        parts = [p.strip().strip("'\"") for p in (args or "").split(",", 1)]
         if not parts or not parts[0]:
             return ""
         fallback = parts[1] if len(parts) > 1 else ""
         try:
-            value = await _store(ctx).get(_namespace(ctx), parts[0], default=fallback)
+            namespace, key = _scope(ctx, parts[0])
+            value = await _store(ctx).get(namespace, key, default=fallback)
         except RuntimeError:
             return fallback
         return "" if value is None else str(value)

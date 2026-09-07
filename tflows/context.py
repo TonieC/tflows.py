@@ -13,6 +13,8 @@ unchanged outside prefix commands.
 
 from typing import Any
 
+from .runtime import FlowValue, stringify
+
 
 class FlowContext:
     """A lightweight context object available to every scripted function.
@@ -31,16 +33,105 @@ class FlowContext:
     kwargs:
         Named arguments (slash-command parameters), also readable via
         ``$arg(name)``.
+    extras:
+        Event / interaction specific objects (``message``, ``emoji``,
+        ``value``, ``interaction``, ...). Exposed as ``$name`` variables.
     """
 
-    __slots__ = ("message", "bot", "command_name", "args", "kwargs")
+    __slots__ = (
+        "message",
+        "bot",
+        "command_name",
+        "args",
+        "kwargs",
+        "locals",
+        "extras",
+        "pending_view",
+        "pending_components",
+        "pending_modal",
+        "component_handlers",
+        "ephemeral",
+        "deferred",
+        "interaction",
+        "filename",
+        "return_value",
+    )
 
-    def __init__(self, message, bot=None, command_name=None, args="", kwargs=None):
+    def __init__(
+        self,
+        message,
+        bot=None,
+        command_name=None,
+        args="",
+        kwargs=None,
+        extras=None,
+        locals=None,
+        interaction=None,
+        filename="",
+    ):
         self.message = message
         self.bot = bot
         self.command_name = command_name
         self.args = args
         self.kwargs: dict[str, Any] = dict(kwargs or {})
+        self.locals: dict[str, FlowValue] = dict(locals or {})
+        self.extras: dict[str, Any] = dict(extras or {})
+        self.pending_view = None
+        self.pending_components: list = []
+        self.pending_modal = None
+        self.component_handlers = None
+        self.ephemeral = False
+        self.deferred = False
+        self.interaction = interaction
+        self.filename = filename
+        self.return_value = None
+
+    def set_local(self, name: str, value) -> None:
+        if isinstance(value, FlowValue):
+            self.locals[name] = value
+        else:
+            self.locals[name] = FlowValue(value)
+
+    def get_local(self, name: str):
+        if name in self.locals:
+            return self.locals[name]
+        lowered = name.lower()
+        for key, value in self.locals.items():
+            if key.lower() == lowered:
+                return value
+        return None
+
+    def child(self, **bound) -> "FlowContext":
+        """Return a context for a script-function call (isolated locals)."""
+        child = FlowContext(
+            message=self.message,
+            bot=self.bot,
+            command_name=self.command_name,
+            args=self.args,
+            kwargs=self.kwargs,
+            extras=self.extras,
+            locals={},
+            interaction=self.interaction,
+            filename=self.filename,
+        )
+        child.pending_view = self.pending_view
+        child.pending_components = self.pending_components
+        child.pending_modal = self.pending_modal
+        child.component_handlers = self.component_handlers
+        child.ephemeral = self.ephemeral
+        child.deferred = self.deferred
+        for name, value in bound.items():
+            child.set_local(name, value)
+        return child
+
+    def extra(self, name: str, default=""):
+        if name in self.extras:
+            return self.extras[name]
+        lowered = name.lower()
+        for key, value in self.extras.items():
+            if key.lower() == lowered:
+                return value
+        return default
 
     # ------------------------------------------------------------------
     # Forwarded attributes (kept identical to discord.Message)
@@ -86,7 +177,11 @@ class FlowContext:
             bot = message._state._get_client()
         except Exception:
             bot = None
-        return cls(message=message, bot=bot, args=args)
+        extras = {}
+        if message is not None:
+            extras["message"] = message
+            extras["content"] = getattr(message, "content", "") or ""
+        return cls(message=message, bot=bot, args=args, extras=extras)
 
     @classmethod
     def for_scheduler(cls, bot, channel=None, command_name=None):
@@ -128,9 +223,12 @@ class FlowContext:
         return cls(message=message, bot=bot, command_name=command_name, args="")
 
     @classmethod
-    def for_event(cls, bot, *, channel=None, author=None, guild=None, command_name=None):
+    def for_event(cls, bot, *, channel=None, author=None, guild=None, command_name=None, extras=None, message=None):
         """Build a context for event-triggered scripts."""
         from datetime import datetime, timezone
+
+        extras = dict(extras or {})
+        source_message = message
 
         class _EventMessage:
             def __init__(self):
@@ -138,8 +236,9 @@ class FlowContext:
                 self.author = author
                 self.guild = guild
                 self.mentions = []
-                self.content = ""
-                self.created_at = datetime.now(timezone.utc)
+                self.content = extras.get("content", getattr(source_message, "content", "") or "")
+                self.created_at = getattr(source_message, "created_at", None) or datetime.now(timezone.utc)
+                self.id = getattr(source_message, "id", 0)
                 self._state = _ContextState(bot)
 
             async def reply(self, content=None, **kwargs):
@@ -152,12 +251,42 @@ class FlowContext:
             async def delete(self):
                 return None
 
-        message = _EventMessage()
-        if message.channel is None:
-            message.channel = _NullChannel()
-        if message.author is None:
-            message.author = _NullAuthor()
-        return cls(message=message, bot=bot, command_name=command_name, args="")
+        event_message = _EventMessage()
+        if event_message.channel is None:
+            event_message.channel = _NullChannel()
+        if event_message.author is None:
+            event_message.author = _NullAuthor()
+        if source_message is not None:
+            extras.setdefault("message", source_message)
+        extras.setdefault("user", event_message.author)
+        return cls(
+            message=event_message,
+            bot=bot,
+            command_name=command_name,
+            args="",
+            extras=extras,
+        )
+
+    @classmethod
+    def for_interaction(cls, bot, interaction, *, command_name=None, extras=None, args="", kwargs=None):
+        """Build a context wrapping a Discord interaction (components / slash)."""
+        extras = dict(extras or {})
+        extras.setdefault("interaction", interaction)
+        extras.setdefault("user", getattr(interaction, "user", None))
+        extras.setdefault("value", extras.get("value", ""))
+        from .slash import _InteractionMessage
+
+        content = extras.get("content", "")
+        message = _InteractionMessage(interaction, bot, content)
+        return cls(
+            message=message,
+            bot=bot,
+            command_name=command_name,
+            args=args,
+            kwargs=kwargs,
+            extras=extras,
+            interaction=interaction,
+        )
 
     def __repr__(self):
         return (
@@ -214,3 +343,7 @@ class _NullAuthor:
 
     def __str__(self):
         return self.name
+
+
+# stringify is imported for callers that want a consistent conversion
+__all__ = ["FlowContext", "stringify"]

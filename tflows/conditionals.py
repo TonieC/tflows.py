@@ -203,6 +203,28 @@ def _eval_atom(atom: str) -> bool:
     return not result if negated else result
 
 
+_FUNC_FORM_RE = re.compile(
+    r"\b(contains|startswith|endswith)\s*\(\s*(.*?)\s*,\s*(.*?)\s*\)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _rewrite_func_forms(text: str) -> str:
+    """Rewrite ``contains(a, b)`` into infix ``a contains b``."""
+
+    def repl(match):
+        op = match.group(1).lower()
+        left = match.group(2).strip()
+        right = match.group(3).strip()
+        return f"{left} {op} {right}"
+
+    previous = None
+    while previous != text:
+        previous = text
+        text = _FUNC_FORM_RE.sub(repl, text)
+    return text
+
+
 def evaluate_condition_text(resolved: str) -> bool:
     """Evaluate an already variable-resolved condition string."""
     resolved = resolved.strip()
@@ -210,14 +232,58 @@ def evaluate_condition_text(resolved: str) -> bool:
         resolved = resolved[:-1].strip()
     if not resolved:
         return False
+    resolved = _rewrite_func_forms(resolved)
     for or_part in _split_top_level(resolved, "or"):
         if all(_eval_atom(atom) for atom in _split_top_level(or_part, "and")):
             return True
     return False
 
 
+def _substitute_locals(ctx, text: str) -> str:
+    """Replace bare local identifiers with their string values.
+
+    Quoted sections are left untouched so ``if name == "hello"`` still
+    compares the local ``name`` against the literal ``hello``.
+    """
+    if ctx is None or not getattr(ctx, "locals", None):
+        return text
+    locals_map = ctx.locals
+    if not locals_map:
+        return text
+    # Longest names first so `total` wins over `to`.
+    names = sorted(locals_map, key=len, reverse=True)
+    ident = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(re.escape(n) for n in names) + r")(?![A-Za-z0-9_])")
+
+    quote = None
+    out = []
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if quote is not None:
+            out.append(char)
+            if char == quote:
+                quote = None
+            i += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+            out.append(char)
+            i += 1
+            continue
+        match = ident.match(text, i)
+        if match:
+            from .runtime import stringify
+
+            out.append(stringify(locals_map[match.group(1)]))
+            i = match.end()
+            continue
+        out.append(char)
+        i += 1
+    return "".join(out)
+
+
 async def evaluate_condition(ctx, engine, raw_expr: str) -> bool:
-    """Replace ``$variables`` in ``raw_expr`` then evaluate it.
+    """Replace ``$variables`` and locals in ``raw_expr`` then evaluate it.
 
     Returns ``False`` (and never raises) on empty expressions so a bare
     ``if:`` line is a useful error instead of a crash; the engine logs it.
@@ -225,6 +291,7 @@ async def evaluate_condition(ctx, engine, raw_expr: str) -> bool:
     if raw_expr is None:
         return False
     resolved = await engine.replace_vars(ctx, raw_expr.strip())
+    resolved = _substitute_locals(ctx, resolved)
     if not resolved.strip():
         return False
     return evaluate_condition_text(resolved)

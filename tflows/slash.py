@@ -110,11 +110,12 @@ class _InteractionChannel:
         self.sent.append((content, kwargs))
         interaction = self._interaction
         try:
-            sender = (
-                interaction.followup.send
-                if self._responded
-                else interaction.response.send_message
-            )
+            response = getattr(interaction, "response", None)
+            already = bool(getattr(response, "is_done", lambda: self._responded)())
+            if already or self._responded:
+                sender = interaction.followup.send
+            else:
+                sender = interaction.response.send_message
             self._responded = True
             if content is None:
                 await sender(**kwargs)
@@ -123,7 +124,10 @@ class _InteractionChannel:
         except Exception:
             # Not connected to Discord (tests) or already handled: fall back
             # to the real channel when available.
-            channel = getattr(self._bot, "get_channel", lambda _i: None)(self.id)
+            channel = getattr(interaction, "channel", None)
+            if channel is None or channel is self:
+                getter = getattr(self._bot, "get_channel", None)
+                channel = getter(self.id) if callable(getter) else None
             if channel is not None and channel is not self:
                 await channel.send(content, **kwargs)
 
