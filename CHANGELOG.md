@@ -6,6 +6,12 @@ All notable changes to tflows are documented here.
 
 No changes yet.
 
+## [1.1.1] - 2026-09-08
+
+### Changed
+
+- Version bump to 1.1.1 for release packaging.
+
 ## [1.1.0] - 2026-09-07
 
 ### Added

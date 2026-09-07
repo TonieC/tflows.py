@@ -1,0 +1,3 @@
+# Runtime dependencies for tflows
+# Install with: pip install -r requirements.txt
+discord.py>=2.3.0
