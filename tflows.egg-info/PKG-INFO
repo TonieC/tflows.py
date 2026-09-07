@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: tflows
-Version: 1.0.1
+Version: 1.1.0
 Summary: A lightweight automation and Discord bot framework that lets you build bots using a simple scripting system.
 Author: Tonie
 License: # Apache License 2.0
@@ -83,17 +83,32 @@ scripts and regular commands.
 - Script-based command system — write bot logic as plain text
 - Built-in `$variable` templates (`$user`, `$server`, `$args`, `$ping`, ...)
 - Command arguments: `$args`, `$arg(0)`, `$argcount`
+- Locals and expressions: `let name = ...`, arithmetic, `$name` interpolation
+- Loops: `for item in ...` / `repeat N` with `break` / `continue`
+- Script functions: `function greet(name):` / `return` / `$greet(Ada)`
 - Conditionals: `if` / `elif` / `else` / `endif` with comparisons and nesting
-- Slash commands via `slash=True` or `bot.slashcommand(...)`
+- Interactive components: `button`, `select`, `modal`, `defer`, `ephemeral`
+- Slash commands and user/message context menus
 - Cooldowns (`cooldown 5s per user`) and permission guards (`require ...`)
-- SQLite persistent per-server state: `set` / `get` / `del` / `incr`
+- SQLite persistent state with `user.` / `channel.` / `guild.` / `global.` scopes
 - Scheduled tasks (`bot.schedule(...)`, `every 1h`, cron) and event triggers (`bot.on_event("join", ...)`)
+- Event filters: `on message where channel == "general"`
+- Opt-in sandboxed HTTP/JSON (`http.get`, `json.parse`)
+- Member/role/channel management (`role add`, `kick`, `timeout`, ...)
+- `import` of `.flow` files (restricted to the script root)
+- `bot.load` / `reload` / `watch` and `tflows check` CLI
 - Rich embeds, both as blocks and single-line commands
 - Built-in `help` command, aliases, and command descriptions
 - Comment support in scripts (`//`, `#`, `--`)
 - Async Discord integration using discord.py 2.x
 - Extensible registry: add your own functions and variables
 - Mixing with regular discord.py commands, cogs, and listeners
+
+---
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the planned next releases and feature priorities.
 
 ---
 
@@ -175,7 +190,18 @@ arguments. Usage is `$name` or `$name(option)`.
 | `$avatar` / `$image` | — | The author's avatar URL |
 | `$prefix` | — | The bot's command prefix |
 | `$command` | — | The currently running command name |
+| `$message` | `content`, `id`, `author` | The triggering message (events / context menus) |
+| `$emoji` | — | Reaction emoji on `react` / `unreact` events |
+| `$value` | — | Selected value from a select menu |
+| `$input` / `$input.field` | field custom id | Modal text-input values |
+| `$members` | `bots`, `users` | Guild member display names (for `for` loops) |
+| `$roles` | — | Guild role names |
+| `$channels` | — | Guild channel names |
+| `$target` | same as `$user` | Context-menu target user or message |
+| `$response` | `body`, `status`, `ok`, `error` | Last HTTP response when stored as `let response = ...` |
 
+Locals created with `let name = ...` are interpolated as `$name`. Path access
+works on objects and JSON: `$data[name]`, `$data.name`, `$user(display)`.
 Unknown variables are left untouched so typos never silently corrupt output.
 
 Example:
@@ -215,6 +241,12 @@ Every line of a script calls one function:
 | `get` | `get points` / `get points 0` | Sends the stored value (with optional fallback) |
 | `del` | `del points` | Forgets a stored key |
 | `incr` | `incr points 3` | Atomically increments a counter (default `1`) |
+| `role` | `role add Moderator` | Add/remove/create/delete roles |
+| `kick` / `ban` / `unban` / `timeout` | `kick $user reason="spam"` | Member moderation (fails safely) |
+| `channel` / `thread` | `channel rename new-name` | Channel and thread management |
+| `http.get` | `let r = http.get "https://..."` | Opt-in HTTP (see HTTP section) |
+| `json.parse` / `json.stringify` | `let data = json.parse {...}` | Parse / dump JSON |
+| `defer` / `ephemeral` / `show_modal` | `defer ephemeral` | Interaction response helpers |
 
 ### Embeds
 
@@ -395,6 +427,171 @@ scripts can all coexist in one bot.
 
 ---
 
+## Locals and expressions
+
+```
+let name = $arg(0)
+let n = 1 + 2 * 3
+n = n + 1
+send Hello $name, n=$n
+```
+
+- `let name = expr` creates a local. Bare `name = expr` reassigns an existing local.
+- `$name` interpolates the local as text. A lone `$name` on the right-hand side of `let` keeps the underlying value (lists, JSON objects, HTTP responses).
+- Operators: `+ - * / %`, comparisons, `and` / `or` / `not`, `contains` / `startswith` / `endswith` / `in`.
+- Locals are per-script-run and isolated inside `function` bodies.
+
+## Loops
+
+```
+for item in a, b, c:
+    send $item
+endfor
+
+repeat 3:
+    send $i
+endrepeat
+```
+
+- `for name in expr` iterates lists, comma/newline-separated strings, JSON arrays, `$members`, `$roles`, `$channels`.
+- `repeat N` runs the body `N` times (capped at 10_000) and sets `$i` / `$index` (0-based).
+- `break` leaves the innermost loop; `continue` skips the rest of the current iteration.
+- `endfor` / `endrepeat` are optional when indentation shows the end of the block.
+
+## Script functions
+
+```
+function greet(name):
+    return Hello $name
+endfunction
+
+send $greet(Ada)
+greet("Ada")
+```
+
+- Defined with `function name(params):` ... `endfunction` (or indentation).
+- Call as a statement (`greet Ada`) or interpolate the return value (`send $greet(Ada)`).
+- `return expr` leaves the function (or the whole script when used at top level).
+- Recursion is capped (64 frames). Parameters default to empty string when omitted.
+
+## Buttons, selects, and modals
+
+```
+button "Click me" id="hello" style="primary":
+    reply You clicked!
+send Choose:
+
+select id="color" placeholder="Pick a color":
+    option "Red" value="red"
+    option "Blue" value="blue"
+    send You picked $value
+
+modal "Feedback" id="fb":
+    input "message" placeholder="Your feedback"
+    send Thanks: $input.message
+```
+
+- Components attach to the next `send` / `reply` / `embed`.
+- Persistent handlers are keyed by `id` (custom id). `on button "hello":` also binds a handler.
+- `defer` / `defer ephemeral` acknowledges an interaction; `ephemeral` marks the next reply as only visible to the user.
+- `show_modal id` opens a previously defined modal.
+
+## HTTP and JSON (opt-in)
+
+HTTP is **fail-closed**. Enable it explicitly:
+
+```py
+bot = FlowBot(prefix="!", allow_http=True, http_allowlist=["api.example.com"])
+```
+
+Or set `TFLOWS_ALLOW_HTTP=1`. Without that, `http.get` stores an error and does not open a socket.
+
+```
+let response = http.get "https://api.example.com/data"
+let data = json.parse $response.body
+send $data[name]
+```
+
+Limits and security:
+
+- HTTPS only unless `allow_insecure_http=True`.
+- Localhost and cloud-metadata hosts are blocked unless allowlisted.
+- Optional `http_allowlist` of exact hostnames; redirects to another host are not followed.
+- 10s timeout, 1 MiB body cap, custom `User-Agent`.
+- `http.post` / `put` / `patch` / `delete` accept `body=`, `header="Name: Value"`, `query=k=v`, `timeout=`.
+
+`json.parse` returns `{}` on invalid input. `json.stringify` / `json.dump` serialize values.
+
+## Importing scripts
+
+```
+import helpers.flow
+send $greet(Ada)
+```
+
+- Paths are resolved under `script_root` (the directory of the first `bot.load(...)` file, or `FlowBot(script_root=...)`).
+- `..`, absolute paths outside the root, remote URLs, and non-script suffixes are rejected.
+- Circular imports error; a file already imported is skipped (not re-executed).
+- Imported `function` definitions are registered globally; remaining top-level lines run once.
+
+## Loading files, reload, and `tflows check`
+
+```py
+bot.load("bot.flow")
+await bot.reload()          # all loaded files; syntax errors keep the previous version
+bot.watch(interval=1.0)     # reload when files change
+```
+
+A `.flow` file may contain `command`, `function`, `on ...`, `every` / `cron`, and `context user|message` blocks.
+
+```bash
+tflows check bot.flow
+tflows check scripts/
+tflows --version
+```
+
+`tflows check` reports unclosed blocks, `break` outside loops, `import` with `..`, and unknown function names (warnings). Exit status is `1` when errors are found.
+
+## State scopes
+
+Unprefixed keys stay per-guild (as in 1.0). Prefixes change the namespace:
+
+```
+set user.points 10          # per user, across guilds
+set channel.topic hello     # per channel
+set guild.flag 1            # same as unprefixed (per guild)
+set global.flag 1           # shared across guilds
+get user.points 0
+```
+
+`$get(user.points, 0)` reads inline. Persistent state is not touched by `reload`.
+
+## Event filters and extra variables
+
+```
+on message where channel == "general":
+    send hi
+
+on join where role == "Member":
+    send Welcome $user(mention)!
+```
+
+`where` uses the same operators as `if`. Bare identifiers `channel`, `user`, `message`, `emoji`, `value`, `role` resolve from the event. Extra `$variables` on events: `$user`, `$message`, `$emoji`, `$content`.
+
+Context menus:
+
+```
+context user Inspect:
+    send Looking at $target
+
+context message Quote:
+    send $content
+```
+
+Or `bot.context_menu("user", "Inspect", "send $target")`.
+
+---
+
 ## Mixing with discord.py
 
 Because `FlowBot` subclasses `discord.ext.commands.Bot`, everything discord.py
@@ -456,6 +653,10 @@ Alternatively, create an isolated bot with its own registry:
 | `members_intent` | `False` | Enable the privileged members intent |
 | `registry` | shared | Use an isolated `FunctionRegistry` |
 | `state_path` | `"tflows.db"` | SQLite state file (lazy); `":memory:"` for tests, `None` to disable |
+| `allow_http` | `False` | Enable `http.get` / `http.post` / ... (fail-closed otherwise) |
+| `http_allowlist` | `None` | Optional iterable of exact hostnames HTTP may contact |
+| `allow_insecure_http` | `False` | Allow `http://` in addition to `https://` |
+| `script_root` | first loaded file | Root directory for `import` (no path traversal) |
 
 ---
 
@@ -469,6 +670,7 @@ See the `examples/` directory:
 - `automation.py` — `wait`, `react`, `delete`, `clear`
 - `mixing.py` — scripts alongside discord.py cogs
 - `advanced.py` — conditionals, guards, state, schedules, events, slash
+- `language.py` — locals, loops, functions, components, JSON, import
 
 Run any example after installing the package:
 

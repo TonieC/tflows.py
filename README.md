@@ -54,6 +54,12 @@ scripts and regular commands.
 
 ---
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the planned next releases and feature priorities.
+
+---
+
 ## Installation
 
 ```bash
