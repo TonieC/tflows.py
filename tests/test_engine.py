@@ -88,6 +88,15 @@ async def test_run_unknown_function_logged(bot, caplog):
     assert any("Unknown function: not_a_function" in r.message for r in caplog.records)
 
 
+async def test_log_unknown_functions_can_be_disabled(caplog):
+    quiet = make_bot(log_unknown_functions=False)
+    message = FakeMessage(content="!t")
+    ctx = FlowContext(message=message, bot=quiet)
+    with caplog.at_level("INFO", logger="tflows.engine"):
+        await quiet.engine.run(ctx, "not_a_function foo")
+    assert not any("Unknown function: not_a_function" in r.message for r in caplog.records)
+
+
 async def test_run_function_error_logged_not_raised(bot, caplog):
     @bot.engine.registry.register("boom")
     async def boom(ctx, args):

@@ -6,6 +6,45 @@ All notable changes to tflows are documented here.
 
 No changes yet.
 
+## [1.1.2] - 2026-09-10
+
+Security and correctness hardening. Existing 1.1 script syntax is unchanged.
+
+### Security
+
+- **HTTP**: private, loopback, link-local, and cloud-metadata addresses are
+  blocked after DNS resolution; redirects are not followed; requests run on a
+  worker thread so they cannot stall the event loop.
+- **Field access**: `$name(option)` no longer invokes callables, so
+  `$user(kick)` cannot call Discord methods. Unresolved options interpolate
+  as empty instead of dumping the whole object.
+- **`wait`** is capped at 300 seconds.
+- **`clear`** requires Manage Messages on both the invoker and the bot.
+- **`import`** only loads `.flow` / `.tflow` files under `script_root`.
+- **Moderation** (`kick` / `ban` / `unban` / `timeout` / `role` / `channel` /
+  `thread`) requires matching permissions on both the invoker and the bot.
+  `kick` / `ban` / `timeout` need an explicit target (they no longer default
+  to the invoker).
+- **Slash commands** use real channel/guild permissions instead of
+  `Permissions.all()`.
+- Top-level **`cooldown` / `require`** run before any other line, even when
+  they are not first. Invalid cooldown durations fail closed.
+- Built-in **help** no longer dumps script source.
+- **`require owner`** honors `guild.owner_id` when `guild.owner` is missing.
+- Scheduled tasks wait off the event loop and skip overlapping runs.
+
+### Fixed
+
+- Default `FlowBot` instances no longer share a mutable global registry.
+- `log_unknown_functions` is honored; callable command prefixes work.
+- SQLite state uses WAL mode with a 30s busy timeout.
+- Component views time out after 300 seconds.
+- Examples call `bot.run(TOKEN)` after checking `DISCORD_TOKEN`.
+
+### Changed
+
+- Version **1.1.2**.
+
 ## [1.1.1] - 2026-09-08
 
 ### Changed

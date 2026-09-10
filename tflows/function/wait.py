@@ -2,6 +2,8 @@ import asyncio
 
 from ..utils import parse_duration
 
+_MAX_WAIT = 300
+
 
 def setup(registry):
 
@@ -10,4 +12,4 @@ def setup(registry):
         seconds = parse_duration(args)
         if seconds is None:
             return
-        await asyncio.sleep(seconds)
+        await asyncio.sleep(min(seconds, _MAX_WAIT))

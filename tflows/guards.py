@@ -148,12 +148,6 @@ def author_has_role(ctx, name: str) -> bool:
     want = (name or "").strip().strip("'\"").lower()
     if not want:
         return False
-    if want in ("admin", "administrator", "administrators"):
-        return check_permission(ctx, "perm", "administrator")
-    if want in ("mod", "moderator", "moderators"):
-        for grant in ("manage_messages", "kick_members", "ban_members", "moderate_members"):
-            if check_permission(ctx, "perm", grant):
-                return True
     return any(role.lower() == want for role in _author_roles(ctx))
 
 
@@ -170,8 +164,12 @@ def check_permission(ctx, kind: str, value: str) -> bool:
             guild = None
         if guild is None:
             return False
+        author_id = getattr(author, "id", None)
+        owner_id = getattr(guild, "owner_id", None)
+        if owner_id is not None and author_id is not None:
+            return owner_id == author_id
         owner = getattr(guild, "owner", None)
-        return owner is not None and getattr(owner, "id", None) == getattr(author, "id", None)
+        return owner is not None and getattr(owner, "id", None) == author_id
 
     if kind == "role":
         return author_has_role(ctx, value)

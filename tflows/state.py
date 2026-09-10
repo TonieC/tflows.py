@@ -106,8 +106,10 @@ class StateStore:
     def __init__(self, path: str = "tflows.db"):
         self.path = path
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._conn = sqlite3.connect(path, check_same_thread=False, timeout=30)
         with self._lock:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA busy_timeout=30000")
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS state "
                 "(guild TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, "

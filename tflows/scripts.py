@@ -26,7 +26,7 @@ from .scheduler import parse_cron_header, parse_every_header
 logger = logging.getLogger("tflows.scripts")
 
 _MAX_IMPORT_DEPTH = 16
-_ALLOWED_SUFFIXES = (".flow", ".tflow", ".txt")
+_ALLOWED_SUFFIXES = (".flow", ".tflow")
 
 
 class ImportError_(Exception):
@@ -49,17 +49,16 @@ def _safe_resolve(root: Path, target: str) -> Path:
         resolved.relative_to(root.resolve())
     except ValueError as exc:
         raise ImportError_(f"import path escapes script root: {raw!r}") from exc
-    if resolved.suffix.lower() not in _ALLOWED_SUFFIXES and resolved.suffix != "":
-        # Allow suffix-less names by trying .flow
-        with_flow = resolved.with_suffix(".flow")
-        if with_flow.exists():
-            return with_flow
-        raise ImportError_(f"refusing non-script import: {raw!r}")
+    if resolved.suffix.lower() in _ALLOWED_SUFFIXES:
+        return resolved
     if resolved.suffix == "":
         with_flow = resolved.with_suffix(".flow")
         if with_flow.exists():
             return with_flow
-    return resolved
+        with_tflow = resolved.with_suffix(".tflow")
+        if with_tflow.exists():
+            return with_tflow
+    raise ImportError_(f"refusing non-script import: {raw!r}")
 
 
 def read_script(path: Path) -> str:

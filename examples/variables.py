@@ -62,3 +62,6 @@ reply Words: $argcount | First: $arg(0) | Last: $arg(-1)
     description="Demonstrates argument variables.",
 )
 TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    raise SystemExit("Set DISCORD_TOKEN before running this example.")
+bot.run(TOKEN)

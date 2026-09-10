@@ -180,7 +180,7 @@ Every line of a script calls one function:
 | `send` | `send hello` | Sends a message to the current channel |
 | `reply` | `reply hi $user` | Replies to the invoking message |
 | `log` | `log command ran` | Prints a message to the console |
-| `wait` | `wait 3s` | Waits (`s`, `m`, `h`, `d` suffixes supported) |
+| `wait` | `wait 3s` | Waits (`s`, `m`, `h`, `d` suffixes; capped at 300s) |
 | `react` | `react ✅` | Adds reactions to the invoking message |
 | `delete` | `delete` | Deletes the invoking message |
 | `clear` | `clear 10` | Purges recent messages (needs Manage Messages) |
@@ -190,7 +190,7 @@ Every line of a script calls one function:
 | `del` | `del points` | Forgets a stored key |
 | `incr` | `incr points 3` | Atomically increments a counter (default `1`) |
 | `role` | `role add Moderator` | Add/remove/create/delete roles |
-| `kick` / `ban` / `unban` / `timeout` | `kick $user reason="spam"` | Member moderation (fails safely) |
+| `kick` / `ban` / `unban` / `timeout` | `kick $user reason="spam"` | Member moderation (explicit target; invoker+bot perms) |
 | `channel` / `thread` | `channel rename new-name` | Channel and thread management |
 | `http.get` | `let r = http.get "https://..."` | Opt-in HTTP (see HTTP section) |
 | `json.parse` / `json.stringify` | `let data = json.parse {...}` | Parse / dump JSON |
@@ -463,8 +463,8 @@ send $data[name]
 Limits and security:
 
 - HTTPS only unless `allow_insecure_http=True`.
-- Localhost and cloud-metadata hosts are blocked unless allowlisted.
-- Optional `http_allowlist` of exact hostnames; redirects to another host are not followed.
+- Private, loopback, link-local, and cloud-metadata addresses are blocked after DNS resolution.
+- Optional `http_allowlist` of exact hostnames. Redirects are not followed.
 - 10s timeout, 1 MiB body cap, custom `User-Agent`.
 - `http.post` / `put` / `patch` / `delete` accept `body=`, `header="Name: Value"`, `query=k=v`, `timeout=`.
 

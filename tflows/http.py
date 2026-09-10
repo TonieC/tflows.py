@@ -18,15 +18,18 @@ Script usage::
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import json
 import logging
 import os
-import ssl
+import socket
 from dataclasses import dataclass, field
 from typing import Any
+
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .runtime import FlowValue, stringify
 
@@ -35,7 +38,7 @@ logger = logging.getLogger("tflows.http")
 _DEFAULT_TIMEOUT = 10
 _MAX_BODY = 1_000_000  # 1 MiB
 _ALLOWED_SCHEMES = {"https"}
-_USER_AGENT = "tflows/1.1 (+https://github.com/TonieC/tflows.py)"
+_USER_AGENT = "tflows/1.1.2 (+https://github.com/TonieC/tflows.py)"
 
 
 @dataclass
@@ -71,6 +74,42 @@ def _allow_insecure(ctx) -> bool:
     return bool(getattr(bot, "allow_insecure_http", False)) if bot is not None else False
 
 
+_BLOCKED_HOSTNAMES = {
+    "localhost",
+    "metadata.google.internal",
+    "metadata.google.com",
+    "instance-data",
+}
+
+
+def _is_blocked_ip(addr: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return bool(
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _resolve_host(host: str) -> list[str]:
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return []
+    addrs = []
+    for info in infos:
+        sockaddr = info[4]
+        if sockaddr:
+            addrs.append(sockaddr[0])
+    return addrs
+
+
 def _validate_url(ctx, url: str) -> str:
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
@@ -82,20 +121,17 @@ def _validate_url(ctx, url: str) -> str:
     host = (parsed.hostname or "").lower()
     if not host:
         raise PermissionError("URL has no host")
-    # Block obvious local / metadata endpoints unless explicitly allowlisted.
-    blocked = {
-        "localhost",
-        "127.0.0.1",
-        "0.0.0.0",
-        "::1",
-        "169.254.169.254",
-        "metadata.google.internal",
-    }
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
     allow = _allowlist(ctx)
     if allow is not None and host not in allow:
         raise PermissionError(f"host {host!r} is not on the HTTP allowlist")
-    if allow is None and host in blocked:
+    if host in _BLOCKED_HOSTNAMES or _is_blocked_ip(host):
         raise PermissionError(f"blocked local/metadata host {host!r}")
+    if allow is None:
+        for addr in _resolve_host(host):
+            if _is_blocked_ip(addr):
+                raise PermissionError(f"blocked local/metadata host {host!r}")
     return url
 
 
@@ -203,9 +239,14 @@ def _request(ctx, method: str, args: str) -> HttpResponse:
         data = body.encode("utf-8") if isinstance(body, str) else body
     request = Request(url, data=data, headers=headers, method=method.upper())
     timeout = options["timeout"]
-    ctx_ssl = ssl.create_default_context()
+
+    class _NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = build_opener(_NoRedirect)
     try:
-        with urlopen(request, timeout=timeout, context=ctx_ssl) as resp:  # noqa: S310 - URL validated above
+        with opener.open(request, timeout=timeout) as resp:
             raw = resp.read(_MAX_BODY + 1)
             if len(raw) > _MAX_BODY:
                 raw = raw[:_MAX_BODY]
@@ -215,6 +256,10 @@ def _request(ctx, method: str, args: str) -> HttpResponse:
             response.headers = {k.lower(): v for k, v in resp.headers.items()}
             response.url = resp.geturl()
             response.ok = 200 <= response.status < 300
+    except PermissionError as exc:
+        response.error = str(exc)
+        logger.warning("[tflow] HTTP blocked: %s", exc)
+        return response
     except HTTPError as exc:
         try:
             raw = exc.read(_MAX_BODY)
@@ -266,19 +311,19 @@ def json_stringify(value) -> str:
 
 def setup(registry):
     async def _http_get(ctx, args):
-        return _request(ctx, "GET", args)
+        return await asyncio.to_thread(_request, ctx, "GET", args)
 
     async def _http_post(ctx, args):
-        return _request(ctx, "POST", args)
+        return await asyncio.to_thread(_request, ctx, "POST", args)
 
     async def _http_put(ctx, args):
-        return _request(ctx, "PUT", args)
+        return await asyncio.to_thread(_request, ctx, "PUT", args)
 
     async def _http_patch(ctx, args):
-        return _request(ctx, "PATCH", args)
+        return await asyncio.to_thread(_request, ctx, "PATCH", args)
 
     async def _http_delete(ctx, args):
-        return _request(ctx, "DELETE", args)
+        return await asyncio.to_thread(_request, ctx, "DELETE", args)
 
     async def _json_parse(ctx, args):
         return json_parse(args)

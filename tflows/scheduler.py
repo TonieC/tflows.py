@@ -121,7 +121,7 @@ class CronSchedule:
 
         now = now or _dt.datetime.now(_dt.timezone.utc).replace(second=0, microsecond=0)
         probe = now + _dt.timedelta(minutes=1)
-        for _ in range(525600 * 2):  # ~2 years of minutes, then give up
+        for _ in range(525600 * 2):
             # cron weekday: 0=Sunday..6=Saturday; python: Monday=0..Sunday=6
             cron_dow = (probe.weekday() + 1) % 7
             if (
@@ -147,6 +147,7 @@ class ScheduledTask:
         self.channel = channel
         self._task = None
         self.runs = 0
+        self._running = False
 
     @property
     def running(self) -> bool:
@@ -168,7 +169,8 @@ class ScheduledTask:
 
     async def _wait(self) -> None:
         if self.cron is not None:
-            await asyncio.sleep(self.cron.seconds_until_next())
+            delay = await asyncio.to_thread(self.cron.seconds_until_next)
+            await asyncio.sleep(delay)
         else:
             await asyncio.sleep(self.interval)
 
@@ -186,14 +188,17 @@ class ScheduledTask:
         from .context import FlowContext
 
         bot = self.bot
-        if bot is None:
+        if bot is None or self._running:
             return
+        self._running = True
         try:
             ctx = FlowContext.for_scheduler(bot, self.channel, command_name=self.name)
             await bot.engine.run(ctx, self.code)
             self.runs += 1
         except Exception:
             logger.exception("[tflow] scheduled task %r failed", self.name)
+        finally:
+            self._running = False
 
 
 class Scheduler:
