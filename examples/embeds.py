@@ -40,3 +40,6 @@ embed $embed<title: $user(display) | desc: Level 42 | color: green | field: Role
 )
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    raise SystemExit("Set DISCORD_TOKEN before running this example.")
+bot.run(TOKEN)

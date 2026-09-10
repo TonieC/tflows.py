@@ -2,7 +2,16 @@
 
 import pytest
 
-from tests.fakes import FakeChannel, FakeGuild, FakeMessage, FakeRole, FakeUser, make_bot, make_ctx
+from tests.fakes import (
+    FakeChannel,
+    FakeGuild,
+    FakeMessage,
+    FakePermissions,
+    FakeRole,
+    FakeUser,
+    make_bot,
+    make_ctx,
+)
 
 
 async def run(bot, code, args="", message=None):
@@ -21,11 +30,17 @@ def bot():
     return make_bot()
 
 
+def _grant(author, guild, **perms):
+    author.guild_permissions = FakePermissions(**perms)
+    guild.me.guild_permissions = FakePermissions(**perms)
+
+
 async def test_role_add_remove(bot):
     guild = FakeGuild()
     guild.roles = [FakeRole("Moderator")]
     author = FakeUser()
     author.roles = []
+    _grant(author, guild, manage_roles=True)
     message = FakeMessage(content="!t", client=bot, guild=guild, author=author)
     await run(bot, "role add Moderator", message=message)
     assert any(getattr(r, "name", None) == "Moderator" for r in author.roles)
@@ -36,15 +51,36 @@ async def test_role_add_remove(bot):
 async def test_kick_sets_flag(bot):
     guild = FakeGuild()
     author = FakeUser()
+    _grant(author, guild, kick_members=True)
     message = FakeMessage(content="!t", client=bot, guild=guild, author=author)
     await run(bot, "kick $user reason=spam", message=message)
     assert getattr(author, "kicked", False) is True
 
 
+async def test_kick_requires_permission(bot):
+    guild = FakeGuild()
+    author = FakeUser()
+    message = FakeMessage(content="!t", client=bot, guild=guild, author=author)
+    await run(bot, "kick $user reason=spam", message=message)
+    assert getattr(author, "kicked", False) is False
+    assert sent(message)
+
+
+async def test_kick_requires_explicit_target(bot):
+    guild = FakeGuild()
+    author = FakeUser()
+    _grant(author, guild, kick_members=True)
+    message = FakeMessage(content="!t", client=bot, guild=guild, author=author)
+    await run(bot, "kick", message=message)
+    assert getattr(author, "kicked", False) is False
+
+
 async def test_channel_rename(bot):
     channel = FakeChannel(name="old")
     guild = FakeGuild()
-    message = FakeMessage(content="!t", client=bot, guild=guild, channel=channel)
+    author = FakeUser()
+    _grant(author, guild, manage_channels=True)
+    message = FakeMessage(content="!t", client=bot, guild=guild, channel=channel, author=author)
     await run(bot, "channel rename new-name", message=message)
     assert channel.name == "new-name"
 

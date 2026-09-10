@@ -21,6 +21,24 @@ def bot():
     return make_bot()
 
 
+async def test_path_access_does_not_call_methods(bot):
+    class Target:
+        def __init__(self):
+            self.name = "Ada"
+            self.kicked = False
+
+        def kick(self):
+            self.kicked = True
+            return "kicked"
+
+    message = FakeMessage(content="!t", client=bot)
+    ctx = make_ctx(bot, message=message)
+    ctx.set_local("target", Target())
+    await bot.engine.run(ctx, "send [$target(kick)]")
+    assert ctx.get_local("target").value.kicked is False
+    assert sent(message) == ["[]"]
+
+
 async def test_let_and_interpolate(bot):
     message, ctx = await run(bot, "let name = Ada\nsend Hello $name")
     assert sent(message) == ["Hello Ada"]

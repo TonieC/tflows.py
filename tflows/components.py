@@ -125,7 +125,7 @@ def build_view(ctx):
     try:
         import discord
 
-        view = discord.ui.View(timeout=None)
+        view = discord.ui.View(timeout=300)
         for spec in pending:
             if spec.kind == "button":
                 style = _discord_style(spec.fields.get("style", "primary"))

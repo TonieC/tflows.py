@@ -206,10 +206,11 @@ def _get_field(value: Any, key: str):
         if index < 0 and abs(index) <= len(value):
             return value[index]
         return ""
-    # Discord / fake objects: attribute then mapping-style option.
     if hasattr(value, key):
         attr = getattr(value, key)
-        return attr() if callable(attr) and not isinstance(attr, type) else attr
+        if callable(attr) and not isinstance(attr, type):
+            return ""
+        return attr
     # Common option aliases used by $user(display)-style resolvers.
     lowered = key.lower()
     mapping = {

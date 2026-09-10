@@ -43,6 +43,16 @@ async def test_import_rejects_parent_path(bot, tmp_path):
         await import_script(bot.engine, ctx, "../secret.flow")
 
 
+async def test_import_rejects_non_script_suffix(bot, tmp_path):
+    secret = tmp_path / "secret.txt"
+    secret.write_text("send leaked\n", encoding="utf-8")
+    bot.script_root = str(tmp_path)
+    bot.engine.script_root = str(tmp_path)
+    ctx = make_ctx(bot)
+    with pytest.raises(ImportError_):
+        await import_script(bot.engine, ctx, "secret.txt")
+
+
 async def test_import_rejects_remote(bot, tmp_path):
     bot.script_root = str(tmp_path)
     bot.engine.script_root = str(tmp_path)

@@ -131,10 +131,19 @@ class _InteractionChannel:
             if channel is not None and channel is not self:
                 await channel.send(content, **kwargs)
 
-    def permissions_for(self, _member):
-        import discord
-
-        return discord.Permissions.all()
+    def permissions_for(self, member):
+        channel = getattr(self._interaction, "channel", None)
+        perms_for = getattr(channel, "permissions_for", None) if channel is not None else None
+        if callable(perms_for):
+            try:
+                return perms_for(member)
+            except Exception:
+                pass
+        author = getattr(self._interaction, "user", None)
+        guild_perms = getattr(author, "guild_permissions", None)
+        if guild_perms is not None:
+            return guild_perms
+        return None
 
 
 class _InteractionMessage:

@@ -109,7 +109,14 @@ class FlowBot(commands.Bot):
         self.log_unknown_functions = kwargs.pop("log_unknown_functions", True)
         case_insensitive = kwargs.pop("case_insensitive", False)
         self.members_intent = kwargs.pop("members_intent", False)
-        reg = kwargs.pop("registry", None) or registry
+        provided_registry = kwargs.pop("registry", None)
+        if provided_registry is not None:
+            reg = provided_registry
+        else:
+            if not getattr(registry, "_tflows_loaded", False):
+                load_function(registry)
+                registry._tflows_loaded = True
+            reg = registry.copy()
         self._state_path = kwargs.pop("state_path", "tflows.db")
         self._state_store: StateStore | None = None
         self.allow_http = kwargs.pop("allow_http", False)
@@ -149,7 +156,9 @@ class FlowBot(commands.Bot):
         self._loaded_files: dict[str, dict] = {}
         self._watch_task = None
 
-        load_function(reg)
+        if not getattr(reg, "_tflows_loaded", False):
+            load_function(reg)
+            reg._tflows_loaded = True
 
         # Start scheduled tasks once connected; wire event dispatch.
         self.add_listener(self._tflow_on_ready, "on_ready")
@@ -703,17 +712,23 @@ class FlowBot(commands.Bot):
                     return command
         return None
 
-    def _parse_invocation(self, message):
+    async def _parse_invocation(self, message):
         """Return ``(prefix, body)`` when the message uses a known prefix."""
         content = message.content
         prefix = self.command_prefix
 
         if callable(prefix):
-            return None
+            try:
+                prefix = prefix(self, message)
+                if asyncio.iscoroutine(prefix):
+                    prefix = await prefix
+            except Exception:
+                logger.exception("[tflow] command_prefix callable failed")
+                return None
 
         prefixes = prefix if isinstance(prefix, (list, tuple)) else [prefix]
         for candidate in prefixes:
-            if content.startswith(candidate):
+            if candidate and content.startswith(candidate):
                 return candidate, content[len(candidate) :].strip()
         return None
 
@@ -721,7 +736,7 @@ class FlowBot(commands.Bot):
         if message.author.bot:
             return
 
-        parsed = self._parse_invocation(message)
+        parsed = await self._parse_invocation(message)
         if parsed is None:
             await self.dispatch_event("on_message_event", message)
             if self.is_ready():
@@ -792,7 +807,6 @@ class FlowBot(commands.Bot):
             if command.slash:
                 params = ", ".join(n for n, _ in command.slash_params) or "none"
                 embed.add_field(name="Slash", value=f"/{command.name} (params: {params})", inline=False)
-            embed.add_field(name="Script", value=f"```\n{command.code.strip()}\n```", inline=False)
             await message.channel.send(embed=embed)
             return
 

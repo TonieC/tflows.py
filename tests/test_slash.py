@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.fakes import FakeChannel, FakeGuild, FakeMessage, FakeUser, make_bot
+from tests.fakes import FakeChannel, FakeGuild, FakeMessage, FakePermissions, FakeUser, make_bot
 from tflows.slash import parse_slash_params
 
 
@@ -135,6 +135,18 @@ async def test_slash_reregister_replaces(bot):
     interaction = FakeInteraction()
     await second.callback(interaction)
     assert interaction.response.messages[0][0] == "two"
+
+
+async def test_slash_require_uses_real_permissions(bot):
+    bot.command("secret", "require manage_messages\nsend secret", slash=True)
+    app_cmd = bot.tree.get_command("secret")
+    user = FakeUser()
+    user.guild_permissions = FakePermissions(manage_messages=False)
+    channel = FakeChannel(permissions=FakePermissions(manage_messages=False))
+    interaction = FakeInteraction(user=user, channel=channel)
+    await app_cmd.callback(interaction)
+    texts = [content for content, _ in interaction.response.messages]
+    assert texts == ["You do not have permission to use this command."]
 
 
 async def test_slash_and_prefix_and_events_coexist(bot):

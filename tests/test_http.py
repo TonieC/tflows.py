@@ -62,6 +62,20 @@ async def test_http_http_scheme_blocked_by_default():
         _validate_url(ctx, "http://example.com")
 
 
+async def test_http_private_ips_blocked():
+    bot = make_bot(allow_http=True, allow_insecure_http=True)
+    ctx = make_ctx(bot)
+    for url in (
+        "http://10.0.0.1/x",
+        "http://192.168.1.1/x",
+        "http://172.16.0.1/x",
+        "http://127.0.0.2/x",
+        "https://[::1]/x",
+    ):
+        with pytest.raises(PermissionError):
+            _validate_url(ctx, url)
+
+
 async def test_json_parse_object(bot):
     message, ctx = await run(bot, 'let data = json.parse {"name": "Ada"}\nsend $data[name]')
     assert sent(message) == ["Ada"]

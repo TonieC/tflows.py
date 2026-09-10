@@ -18,6 +18,7 @@ Supported operators (highest precedence first)::
 from __future__ import annotations
 
 import ast
+import json
 import operator
 import re
 
@@ -151,40 +152,6 @@ def _apply_bin(op, left, right):
     return fn(left_c, right_c)
 
 
-def _word_ops_to_python(expr: str) -> str:
-    """Rewrite ``a contains b`` into a call the AST evaluator understands."""
-    # Protect quoted strings first via a placeholder scan.
-    out = []
-    i = 0
-    quote = None
-    lower = expr
-    while i < len(lower):
-        char = lower[i]
-        if quote is not None:
-            out.append(char)
-            if char == quote:
-                quote = None
-            i += 1
-            continue
-        if char in ("'", '"'):
-            quote = char
-            out.append(char)
-            i += 1
-            continue
-        matched = False
-        for word in _WORD_OPS:
-            pattern = f" {word} "
-            if lower[i : i + len(pattern)].lower() == pattern:
-                out.append(f" __{word}__ ")
-                i += len(pattern)
-                matched = True
-                break
-        if not matched:
-            out.append(char)
-            i += 1
-    return "".join(out)
-
-
 def _eval_ast(node, ctx):
     if isinstance(node, ast.Expression):
         return _eval_ast(node.body, ctx)
@@ -262,15 +229,10 @@ def _eval_ast(node, ctx):
                 return ""
         if isinstance(target, str):
             try:
-                parsed = __import__("json").loads(target)
-                return _eval_ast(
-                    ast.Subscript(value=ast.Constant(parsed), slice=ast.Constant(key), ctx=ast.Load()),
-                    ctx,
-                ) if False else (
-                    parsed.get(key, parsed.get(str(key), ""))
-                    if isinstance(parsed, dict)
-                    else ""
-                )
+                parsed = json.loads(target)
+                if isinstance(parsed, dict):
+                    return parsed.get(key, parsed.get(str(key), ""))
+                return ""
             except Exception:
                 return ""
         return ""
@@ -333,24 +295,10 @@ def _rewrite_word_ops(text: str) -> str:
     for word in _WORD_OPS:
         pattern = re.compile(rf"(.+?)\s+{word}\s+(.+)", re.IGNORECASE)
         match = pattern.fullmatch(result.strip())
-        if match and not _inside_quotes(result, match.start(0) if False else 0):
-            # Only rewrite when the operator is at the top level (not quoted).
-            if _top_level_word(result, word):
+        if match and _top_level_word(result, word):
                 left, right = _split_word_op(result, word)
                 result = f"__{word}__({left}, {right})"
     return result
-
-
-def _inside_quotes(text: str, index: int) -> bool:
-    quote = None
-    for i, char in enumerate(text):
-        if i >= index:
-            break
-        if quote is None and char in ("'", '"'):
-            quote = char
-        elif char == quote:
-            quote = None
-    return quote is not None
 
 
 def _top_level_word(text: str, word: str) -> bool:

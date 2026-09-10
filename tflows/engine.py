@@ -186,6 +186,8 @@ class Engine:
                     optioned = access_path(value, args if args[:1] in ".[" else "." + args)
                     if optioned not in ("", None) and optioned is not value:
                         value = optioned
+                    else:
+                        value = ""
             return True, value
 
         script_fn = self._script_functions(ctx).get(name)
@@ -343,7 +345,7 @@ class Engine:
         if parsed is None:
             logger.warning("[tflow] Invalid cooldown syntax: %s", stripped)
             await self._notify(ctx, f"Invalid cooldown syntax: `{stripped}` (expected e.g. `cooldown 5s per user`)")
-            return True
+            return False
         if state["cooldown_seen"]:
             return True  # first cooldown line wins
         state["cooldown_seen"] = True
@@ -396,6 +398,25 @@ class Engine:
 
         bot.cooldowns = CooldownManager()
         return bot.cooldowns
+
+    async def _enforce_leading_guards(self, ctx, lines) -> bool:
+        """Apply top-level ``cooldown`` / ``require`` before any other line."""
+        guard_state = {"cooldown_seen": False}
+        for raw in lines:
+            if self._indent(raw) != 0:
+                continue
+            stripped = raw.strip()
+            if not stripped or self._is_comment(stripped):
+                continue
+            cooldown = await self._handle_cooldown(ctx, stripped, guard_state)
+            if cooldown is False:
+                return False
+            if cooldown is True:
+                continue
+            required = await self._handle_require(ctx, stripped)
+            if required is False:
+                return False
+        return True
 
     async def _notify(self, ctx, text: str) -> None:
         try:
@@ -455,8 +476,12 @@ class Engine:
         if not isinstance(ctx, FlowContext):
             ctx = FlowContext.from_message(ctx)
 
+        lines = (code or "").split("\n")
+        if not await self._enforce_leading_guards(ctx, lines):
+            return ctx.return_value
+
         try:
-            await self._run_lines(ctx, (code or "").split("\n"))
+            await self._run_lines(ctx, lines, skip_leading_guards=True)
         except FlowReturn as ret:
             ctx.return_value = ret.value
             return ret.value
@@ -466,7 +491,7 @@ class Engine:
             logger.warning("[tflow] 'continue' outside of a loop")
         return ctx.return_value
 
-    async def _run_lines(self, ctx, lines, *, loop_depth=0):
+    async def _run_lines(self, ctx, lines, *, loop_depth=0, skip_leading_guards=False):
         log_errors = self._log_errors(ctx)
         stack: list[dict] = []  # if-frames
         guard_state = {"cooldown_seen": False}
@@ -491,6 +516,17 @@ class Engine:
             if not stripped or self._is_comment(stripped):
                 i += 1
                 continue
+
+            if skip_leading_guards and indent == 0:
+                low = stripped.lower()
+                if (
+                    low == "cooldown"
+                    or low.startswith("cooldown ")
+                    or low == "require"
+                    or low.startswith("require ")
+                ):
+                    i += 1
+                    continue
 
             # ----- conditional headers -----
             if_header = parse_if_header(stripped)
@@ -1040,7 +1076,9 @@ class Engine:
 
         func = self.registry.get(name)
         if func is None:
-            logger.info("[tflow] Unknown function: %s", name)
+            bot = getattr(ctx, "bot", None)
+            if bot is None or getattr(bot, "log_unknown_functions", True):
+                logger.info("[tflow] Unknown function: %s", name)
             return
 
         result = func(ctx, args)

@@ -53,6 +53,19 @@ async def test_wait_function_invalid_duration_no_crash(bot):
     await run_script(bot, "wait not-a-number")
 
 
+async def test_wait_function_caps_duration(bot, monkeypatch):
+    import asyncio
+
+    slept = []
+
+    async def fake_sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr("tflows.function.wait.asyncio.sleep", fake_sleep)
+    await run_script(bot, "wait 999999d")
+    assert slept == [300]
+
+
 async def test_clear_function_with_permission(bot):
     message = await run_script(bot, "clear 5")
     assert message.deleted is True
@@ -60,8 +73,11 @@ async def test_clear_function_with_permission(bot):
 
 
 async def test_clear_function_requires_permission(bot):
+    from tests.fakes import FakePermissions
+
     message = FakeMessage(content="!t", client=bot)
-    message.channel.permissions_for = lambda user: type("P", (), {"manage_messages": False})()
+    message.author.guild_permissions = FakePermissions(manage_messages=False)
+    message.channel._permissions = FakePermissions(manage_messages=False)
     await run_script(bot, "clear 5", message=message)
     assert message.deleted is False
     assert message.channel.sent != []

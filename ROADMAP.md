@@ -4,6 +4,15 @@ This document outlines the near-term direction for the project and the features 
 
 For the detailed implementation plan for the 1.2 milestone, see [docs/v1.2-technical-spec.md](docs/v1.2-technical-spec.md).
 
+## 1.1.2 — Security and correctness (shipped 2026-09-10)
+
+Shipped as a patch on 1.1. Not a substitute for the 1.2 validation work.
+
+- HTTP SSRF hardening (DNS resolve-then-check, private/metadata blocked, no redirects)
+- Permission gates on moderation, `clear`, and slash commands
+- `wait` / component timeouts, import suffix sandbox, non-calling field access
+- Isolated default registries, fail-closed cooldowns, owner_id, scheduler overlap lock
+
 ## 1.2 — Stability, validation, and workflow tooling
 
 Priority: High
@@ -29,6 +38,7 @@ Priority: High
   - timezone-aware jobs
   - retries/backoff for failed scheduled tasks
   - easier cron presets and natural-language scheduling inputs
+  - (1.1.2 already: wait off the event loop, skip overlapping runs)
 - Observability
   - command execution logs
   - per-guild stats and health summaries
@@ -56,7 +66,7 @@ Priority: High
 - Better HTTP tooling
   - response/schema helpers
   - request debug mode
-  - stricter host controls and clearer policy errors
+  - clearer policy errors (host/IP blocking and no-redirects shipped in 1.1.2)
 
 ## 1.4 — UX and extensibility
 
@@ -73,8 +83,8 @@ Priority: Medium
   - persistent interaction state
 - Permission and access controls
   - command groups and scopes
-  - role-aware authorization
   - clearer audit logs
+  - (1.1.2 already: invoker+bot permission checks on moderation, `clear`, slash)
 - Bot management tools
   - status commands and runtime dashboards
   - script health checks
@@ -102,7 +112,7 @@ These are not guaranteed for upcoming releases, but they are valuable candidates
 - AI-assisted debugging and diagnostics
 - marketplace-style examples and starter templates
 - formal type system for script variables and state values
-- stronger sandboxing and execution policy controls
+- stronger sandboxing and execution policy controls (partially shipped in 1.1.2)
 - template packs for moderation, ticketing, onboarding, and automation
 
 ## Release principles

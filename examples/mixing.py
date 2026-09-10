@@ -43,3 +43,6 @@ async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    raise SystemExit("Set DISCORD_TOKEN before running this example.")
+bot.run(TOKEN)

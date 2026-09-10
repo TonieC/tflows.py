@@ -85,3 +85,6 @@ reply You have $get(user.xp, 0) XP.
 )
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    raise SystemExit("Set DISCORD_TOKEN before running this example.")
+bot.run(TOKEN)

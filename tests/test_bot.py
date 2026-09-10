@@ -69,6 +69,14 @@ async def test_case_sensitive_by_default(bot):
     assert message.channel.sent == []
 
 
+async def test_callable_prefix(bot):
+    bot = make_bot(prefix=lambda _bot, _message: "!")
+    bot.command("ping", "send pong")
+    message = FakeMessage(content="!ping", client=bot)
+    await bot.on_message(message)
+    assert message.channel.sent == [(("pong",), {})]
+
+
 async def test_multiple_prefixes(bot):
     bot = make_bot(prefix=["!", "?"])
     bot.command("ping", "send pong")
@@ -145,6 +153,8 @@ async def test_help_command_details(bot):
     assert "greet" in embed.title
     assert any("Says hi" in f.value for f in embed.fields)
     assert any("hello" in f.value for f in embed.fields)
+    assert all(f.name != "Script" for f in embed.fields)
+    assert "reply hi" not in str(embed.to_dict() if hasattr(embed, "to_dict") else embed.fields)
 
 
 async def test_help_unknown_command(bot):
@@ -166,6 +176,25 @@ async def test_user_defined_help_overrides_builtin(bot):
     message = FakeMessage(content="!help", client=bot)
     await bot.on_message(message)
     assert message.channel.sent == [(("custom help",), {})]
+
+
+async def test_default_bots_do_not_share_registry():
+    bot_a = make_bot()
+    bot_b = make_bot()
+
+    @bot_a.engine.registry.register("only_a")
+    async def only_a(ctx, args):
+        await ctx.channel.send("a")
+
+    bot_a.command("run", "only_a")
+    bot_b.command("run", "only_a")
+    message_a = FakeMessage(content="!run", client=bot_a)
+    await bot_a.on_message(message_a)
+    message_b = FakeMessage(content="!run", client=bot_b)
+    await bot_b.on_message(message_b)
+    assert message_a.channel.sent == [(("a",), {})]
+    assert message_b.channel.sent == []
+    bot_a.engine.registry.unregister("only_a")
 
 
 async def test_custom_registry_isolation():

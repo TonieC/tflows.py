@@ -100,5 +100,12 @@ class FunctionRegistry:
         """Return the sorted list of registered variable names."""
         return sorted(self.vars)
 
+    def copy(self):
+        clone = FunctionRegistry()
+        clone.functions = dict(self.functions)
+        clone.vars = dict(self.vars)
+        clone._tflows_loaded = getattr(self, "_tflows_loaded", False)
+        return clone
+
 
 registry = FunctionRegistry()

@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
+from ..guards import check_permission
 from ..utils import parse_color, parse_duration
 
 logger = logging.getLogger("tflows.manage")
@@ -46,6 +47,56 @@ def _guild(ctx):
 
 def _author(ctx):
     return getattr(ctx, "author", None)
+
+
+_PERM_LABELS = {
+    "kick_members": "Kick Members",
+    "ban_members": "Ban Members",
+    "manage_roles": "Manage Roles",
+    "manage_channels": "Manage Channels",
+    "moderate_members": "Timeout Members",
+    "manage_threads": "Manage Threads",
+}
+
+
+def _bot_has_perm(ctx, perm: str) -> bool:
+    guild = _guild(ctx)
+    me = getattr(guild, "me", None) if guild is not None else None
+    if me is None:
+        return True
+    perms = getattr(me, "guild_permissions", None)
+    if perms is not None and getattr(perms, perm, False):
+        return True
+    channel = getattr(ctx, "channel", None)
+    permissions_for = getattr(channel, "permissions_for", None)
+    if callable(permissions_for):
+        try:
+            channel_perms = permissions_for(me)
+            if channel_perms is not None and getattr(channel_perms, perm, False):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+async def _require_perm(ctx, perm: str) -> bool:
+    if not check_permission(ctx, "perm", perm):
+        label = _PERM_LABELS.get(perm, perm)
+        await _notify(ctx, f"You need the **{label}** permission to do that.")
+        return False
+    if not _bot_has_perm(ctx, perm):
+        label = _PERM_LABELS.get(perm, perm)
+        await _notify(ctx, f"I need the **{label}** permission to do that.")
+        return False
+    return True
+
+
+async def _notify(ctx, message: str):
+    logger.warning("[tflow] %s", message)
+    try:
+        await ctx.channel.send(message)
+    except Exception:
+        pass
 
 
 def _parse_named(args: str) -> tuple[list[str], dict]:
@@ -103,28 +154,33 @@ def _find_role(guild, name: str):
     return None
 
 
+def _member_matches(member, spec: str, lowered: str) -> bool:
+    if member is None:
+        return False
+    if str(getattr(member, "id", "")) == spec:
+        return True
+    if str(getattr(member, "name", "")) == spec:
+        return True
+    if str(getattr(member, "display_name", "")) == spec:
+        return True
+    if str(getattr(member, "mention", "")) == spec:
+        return True
+    return str(getattr(member, "name", "")).lower() == lowered
+
+
 def _find_member(guild, ctx, spec: str):
     if not spec:
-        return _author(ctx)
+        return None
     spec = str(spec).strip().strip("<>@!")
+    lowered = spec.lower()
     members = list(getattr(guild, "members", None) or [])
     for member in members:
-        if str(getattr(member, "id", "")) == spec:
+        if _member_matches(member, spec, lowered):
             return member
-        if str(getattr(member, "name", "")) == spec:
-            return member
-        if str(getattr(member, "display_name", "")) == spec:
-            return member
-        if str(getattr(member, "mention", "")) == spec:
-            return member
-    lowered = spec.lower()
-    for member in members:
-        if str(getattr(member, "name", "")).lower() == lowered:
-            return member
-    mentions = getattr(ctx, "mentions", None) or []
-    if mentions:
-        return mentions[0]
-    return _author(ctx)
+    author = _author(ctx)
+    if _member_matches(author, spec, lowered):
+        return author
+    return None
 
 
 def _find_channel(guild, ctx, spec: str):
@@ -173,10 +229,12 @@ def setup(registry):
             return _fail(ctx, "role: not in a server")
 
         if action in ("add", "give"):
+            if not await _require_perm(ctx, "manage_roles"):
+                return None
             if len(positional) < 2:
                 return _fail(ctx, "role add: missing role name")
             role = _find_role(guild, positional[1])
-            member = _find_member(guild, ctx, positional[2] if len(positional) > 2 else "")
+            member = _find_member(guild, ctx, positional[2] if len(positional) > 2 else "") or _author(ctx)
             if role is None or member is None:
                 return _fail(ctx, "role add: role or member not found")
             adder = getattr(member, "add_roles", None)
@@ -189,10 +247,12 @@ def setup(registry):
             return None
 
         if action in ("remove", "take"):
+            if not await _require_perm(ctx, "manage_roles"):
+                return None
             if len(positional) < 2:
                 return _fail(ctx, "role remove: missing role name")
             role = _find_role(guild, positional[1])
-            member = _find_member(guild, ctx, positional[2] if len(positional) > 2 else "")
+            member = _find_member(guild, ctx, positional[2] if len(positional) > 2 else "") or _author(ctx)
             if role is None or member is None:
                 return _fail(ctx, "role remove: role or member not found")
             remover = getattr(member, "remove_roles", None)
@@ -204,6 +264,8 @@ def setup(registry):
             return None
 
         if action in ("create", "new"):
+            if not await _require_perm(ctx, "manage_roles"):
+                return None
             if len(positional) < 2:
                 return _fail(ctx, "role create: missing name")
             name = positional[1]
@@ -237,6 +299,8 @@ def setup(registry):
             return None
 
         if action in ("delete", "remove_role"):
+            if not await _require_perm(ctx, "manage_roles"):
+                return None
             if len(positional) < 2:
                 return _fail(ctx, "role delete: missing name")
             role = _find_role(guild, positional[1])
@@ -257,7 +321,11 @@ def setup(registry):
         guild = _guild(ctx)
         if guild is None:
             return _fail(ctx, "kick: not in a server")
-        member = _find_member(guild, ctx, positional[0] if positional else "")
+        if not await _require_perm(ctx, "kick_members"):
+            return None
+        if not positional:
+            return _fail(ctx, "kick: missing member")
+        member = _find_member(guild, ctx, positional[0])
         if member is None:
             return _fail(ctx, "kick: member not found")
         reason = named.get("reason", " ".join(positional[1:]) if len(positional) > 1 else None)
@@ -275,7 +343,11 @@ def setup(registry):
         guild = _guild(ctx)
         if guild is None:
             return _fail(ctx, "ban: not in a server")
-        member = _find_member(guild, ctx, positional[0] if positional else "")
+        if not await _require_perm(ctx, "ban_members"):
+            return None
+        if not positional:
+            return _fail(ctx, "ban: missing member")
+        member = _find_member(guild, ctx, positional[0])
         if member is None:
             return _fail(ctx, "ban: member not found")
         reason = named.get("reason")
@@ -302,6 +374,8 @@ def setup(registry):
         guild = _guild(ctx)
         if guild is None:
             return _fail(ctx, "unban: not in a server")
+        if not await _require_perm(ctx, "ban_members"):
+            return None
         if not positional:
             return _fail(ctx, "unban: missing user id")
         user_id = positional[0]
@@ -318,7 +392,11 @@ def setup(registry):
         guild = _guild(ctx)
         if guild is None:
             return _fail(ctx, "timeout: not in a server")
-        member = _find_member(guild, ctx, positional[0] if positional else "")
+        if not await _require_perm(ctx, "moderate_members"):
+            return None
+        if not positional:
+            return _fail(ctx, "timeout: missing member")
+        member = _find_member(guild, ctx, positional[0])
         duration_raw = named.get("duration") or named.get("for") or (positional[1] if len(positional) > 1 else "60s")
         seconds = parse_duration(duration_raw) or 60
         until = timedelta(seconds=seconds)
@@ -346,6 +424,8 @@ def setup(registry):
         guild = _guild(ctx)
         if guild is None:
             return _fail(ctx, "channel: not in a server")
+        if not await _require_perm(ctx, "manage_channels"):
+            return None
 
         if action in ("create", "new"):
             name = positional[1] if len(positional) > 1 else named.get("name")
@@ -425,6 +505,8 @@ def setup(registry):
 
     @registry.register("thread")
     async def thread_cmd(ctx, args):
+        if not await _require_perm(ctx, "manage_threads"):
+            return None
         positional, named = _parse_named(args)
         action = (positional[0].lower() if positional else "create")
         if action not in ("create", "new", "start"):

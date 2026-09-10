@@ -79,11 +79,21 @@ async def test_cooldown_entries_pruned(bot):
     assert ("fresh", "user", "user:1") in manager._expires
 
 
-async def test_invalid_cooldown_syntax_warns_and_continues(bot):
+async def test_invalid_cooldown_syntax_fails_closed(bot):
     message = await run(bot, "cooldown banana\nsend hi")
     texts = sent_text(message)
-    assert "hi" in texts
+    assert "hi" not in texts
     assert any("cooldown" in t.lower() for t in texts)
+
+
+async def test_cooldown_applies_even_when_not_first(bot):
+    code = "send hi\ncooldown 60s per user"
+    m1 = FakeMessage(content="!t", client=bot)
+    await bot.engine.run(make_ctx(bot, message=m1, command_name="late"), code)
+    assert sent_text(m1) == ["hi"]
+    m2 = FakeMessage(content="!t", client=bot)
+    await bot.engine.run(make_ctx(bot, message=m2, command_name="late"), code)
+    assert "hi" not in sent_text(m2)
 
 
 async def test_cooldown_in_prefix_command(bot):
@@ -138,6 +148,15 @@ async def test_require_owner(bot):
     stranger = FakeMessage(content="!t", client=bot)
     message2 = await run(bot, "require owner\nsend secret", message=stranger)
     assert "secret" not in sent_text(message2)
+
+
+async def test_require_owner_uses_owner_id(bot):
+    author = FakeUser(id=42, name="Owner")
+    message = FakeMessage(content="!t", client=bot, author=author)
+    message.guild.owner = None
+    message.guild.owner_id = 42
+    result = await run(bot, "require owner\nsend ok", message=message)
+    assert sent_text(result) == ["ok"]
 
 
 async def test_invalid_require_fails_closed(bot):

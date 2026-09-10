@@ -42,3 +42,6 @@ clear 5
 )
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    raise SystemExit("Set DISCORD_TOKEN before running this example.")
+bot.run(TOKEN)
