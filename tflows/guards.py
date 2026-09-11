@@ -41,19 +41,22 @@ _SCOPE_ALIASES = {
 def parse_cooldown(line: str):
     """Parse ``cooldown 5s per user``; returns ``(seconds, scope)`` or ``None``.
 
-    Accepts ``cooldown 5``, ``cooldown 5s``, ``cooldown 5s per user``,
+    Accepts ``cooldown 5``, ``cooldown 5s``, ``cooldown 1h 30m per user``,
     ``cooldown 10m per guild``. Returns ``None`` with no exception on
     invalid syntax so the engine can report a useful error.
     """
-    match = re.fullmatch(
-        r"cooldown\s+(\S+)(?:\s+per\s+(\w+))?", line.strip(), flags=re.IGNORECASE
-    )
+    match = re.fullmatch(r"cooldown\s+(.+)$", line.strip(), flags=re.IGNORECASE)
     if not match:
         return None
-    seconds = parse_duration(match.group(1))
+    rest = match.group(1).strip()
+    scope = "user"
+    split = re.search(r"\s+per\s+(\w+)\s*$", rest, flags=re.IGNORECASE)
+    if split:
+        rest = rest[: split.start()].strip()
+        scope = _SCOPE_ALIASES.get(split.group(1).lower(), "user")
+    seconds = parse_duration(rest)
     if seconds is None or seconds < 0:
         return None
-    scope = _SCOPE_ALIASES.get((match.group(2) or "user").lower(), "user")
     return (seconds, scope)
 
 
