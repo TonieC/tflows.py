@@ -6,7 +6,7 @@ All notable changes to tflows are documented here.
 
 No changes yet.
 
-## [1.3.0] - 2026-09-10
+## [1.2.0] - 2026-09-10
 
 Flexible durations, developer knobs, and extra automation primitives.
 
@@ -27,7 +27,7 @@ Flexible durations, developer knobs, and extra automation primitives.
 
 ### Changed
 
-- Version **1.3.0**. Existing 1.1 syntax still works; single-unit durations
+- Version **1.2.0**. Existing 1.1 syntax still works; single-unit durations
   (`5s`, `2m`, `1h`) are unchanged.
 
 ## [1.1.2] - 2026-09-10
