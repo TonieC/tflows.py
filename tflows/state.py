@@ -168,6 +168,24 @@ class StateStore:
             logger.exception("[tflow] state delete failed for %r", key)
             return False
 
+    def _keys_sync(self, guild: str) -> list:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key FROM state WHERE guild = ? ORDER BY key", (guild,)
+            ).fetchall()
+        return [row[0] for row in rows]
+
+    async def keys(self, guild: str) -> list:
+        try:
+            return await asyncio.to_thread(self._keys_sync, guild)
+        except Exception:
+            logger.exception("[tflow] state keys failed for %r", guild)
+            return []
+
+    async def exists(self, guild: str, key: str) -> bool:
+        value = await self.get(guild, key, default=None)
+        return value is not None
+
     async def incr(self, guild: str, key: str, delta: int = 1):
         """Atomically increment ``key`` by ``delta``; returns the new value."""
         def _op():

@@ -101,6 +101,21 @@ class FlowBot(commands.Bot):
         that never touch state pay no cost. Pass ``None`` to disable
         persistent state (``set``/``get`` then report a useful error) or
         ``":memory:"`` for tests.
+    max_wait:
+        Cap for ``wait`` / ``after`` / ``delay`` in seconds (default ``300``).
+        Set ``-1`` to disable the cap.
+    max_repeat:
+        Cap for ``repeat N`` iterations (default ``10_000``).
+    max_clear:
+        Cap for ``clear`` (default ``100``).
+    component_timeout:
+        Discord view timeout in seconds (default ``300``). ``0`` means no timeout.
+    http_timeout / http_max_timeout / http_max_body:
+        Default HTTP timeout, maximum timeout, and response size cap.
+    schedule_retries / schedule_backoff:
+        Retry count and backoff duration for failed scheduled tasks.
+    config:
+        Mapping of developer-defined values exposed as ``$config(key)``.
     """
 
     def __init__(self, prefix="!", **kwargs):
@@ -122,6 +137,16 @@ class FlowBot(commands.Bot):
         self.allow_http = kwargs.pop("allow_http", False)
         self.http_allowlist = kwargs.pop("http_allowlist", None)
         self.allow_insecure_http = kwargs.pop("allow_insecure_http", False)
+        self.http_timeout = kwargs.pop("http_timeout", 10)
+        self.http_max_timeout = kwargs.pop("http_max_timeout", 30)
+        self.http_max_body = kwargs.pop("http_max_body", 1_000_000)
+        self.max_wait = kwargs.pop("max_wait", 300)
+        self.max_repeat = kwargs.pop("max_repeat", 10_000)
+        self.max_clear = kwargs.pop("max_clear", 100)
+        self.component_timeout = kwargs.pop("component_timeout", 300)
+        self.schedule_retries = kwargs.pop("schedule_retries", 0)
+        self.schedule_backoff = kwargs.pop("schedule_backoff", "1s")
+        self.config = dict(kwargs.pop("config", None) or {})
         self.script_root = kwargs.pop("script_root", None)
 
         intents = kwargs.pop("intents", None)
@@ -155,6 +180,7 @@ class FlowBot(commands.Bot):
         self.context_menus: dict[str, Any] = {}
         self._loaded_files: dict[str, dict] = {}
         self._watch_task = None
+        self._delayed_tasks: list = []
 
         if not getattr(reg, "_tflows_loaded", False):
             load_function(reg)
@@ -188,6 +214,10 @@ class FlowBot(commands.Bot):
         try:
             if self._watch_task is not None and not self._watch_task.done():
                 self._watch_task.cancel()
+            for task in list(self._delayed_tasks):
+                if task is not None and not task.done():
+                    task.cancel()
+            self._delayed_tasks.clear()
             await self.scheduler.stop_all()
         finally:
             if self._state_store is not None:

@@ -44,29 +44,20 @@ Priority: High
   - per-guild stats and health summaries
   - failure summaries for debugging
 
-## 1.3 — Data and automation primitives
+## 1.3 — Data and automation primitives (shipped 2026-09-10)
 
-Priority: High
+Shipped in 1.3.0:
 
-### Goals
-- Make bots easier to build for real-world workflows
-- Add simple but powerful ways to persist and query structured data
+- Mixed-unit durations (`1h 30m`, `500ms`, word units) across wait/cooldown/schedule/timeout
+- Developer knobs: `max_wait`, `max_repeat`, `max_clear`, HTTP timeouts, `config={...}`
+- `after` delayed blocks, `switch`/`case`, `choose`, `$config`, state `exists`/`keys`
+- Scheduled-task retries/backoff
 
-### Planned features
-- SQLite data helpers
-  - higher-level `db` helpers for common bot data patterns
-  - table creation helpers and migrations
-  - simple query wrappers for bot state and automation records
-- Workflow triggers
-  - event-driven automation chains
-  - reusable trigger/action blocks
-- Queue/job runner
-  - async background jobs
-  - delayed processing and retry handling
-- Better HTTP tooling
-  - response/schema helpers
-  - request debug mode
-  - clearer policy errors (host/IP blocking and no-redirects shipped in 1.1.2)
+Still planned for a later 1.3.x / 1.4:
+
+- SQLite table helpers and migrations
+- Workflow trigger/action chains
+- Request debug mode and HTTP schema helpers
 
 ## 1.4 — UX and extensibility
 

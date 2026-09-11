@@ -180,7 +180,9 @@ Every line of a script calls one function:
 | `send` | `send hello` | Sends a message to the current channel |
 | `reply` | `reply hi $user` | Replies to the invoking message |
 | `log` | `log command ran` | Prints a message to the console |
-| `wait` | `wait 3s` | Waits (`s`, `m`, `h`, `d` suffixes; capped at 300s) |
+| `wait` / `delay` | `wait 1h 30m` | Waits; mixed units (`ms`/`s`/`m`/`h`/`d`/`w`); capped by `max_wait` |
+| `choose` | `choose a, b, c` | Picks a random option (`$choose(...)` also works) |
+| `config` | `config theme dark` | Read/write developer config (`$config(theme)`) |
 | `react` | `react ✅` | Adds reactions to the invoking message |
 | `delete` | `delete` | Deletes the invoking message |
 | `clear` | `clear 10` | Purges recent messages (needs Manage Messages) |
@@ -272,8 +274,8 @@ require owner
 ```
 
 - `cooldown <duration> [per user|channel|guild|global]` (default `per user`).
-  Durations accept `s`, `m`, `h`, `d` suffixes. While on cooldown the script
-  is skipped and the user is told how long to wait.
+  Durations accept mixed units (`5s`, `1h 30m`, `500ms`, `2 minutes`).
+  While on cooldown the script is skipped and the user is told how long to wait.
 - `require <permission>` checks Discord permissions
   (`manage_messages`, `administrator`, `kick_members`, ...),
   `require role <name>` checks a role (with `admin`/`mod` shortcuts),
@@ -402,9 +404,27 @@ endrepeat
 ```
 
 - `for name in expr` iterates lists, comma/newline-separated strings, JSON arrays, `$members`, `$roles`, `$channels`.
-- `repeat N` runs the body `N` times (capped at 10_000) and sets `$i` / `$index` (0-based).
+- `repeat N` runs the body `N` times (capped by `max_repeat`, default 10_000) and sets `$i` / `$index` (0-based).
 - `break` leaves the innermost loop; `continue` skips the rest of the current iteration.
 - `endfor` / `endrepeat` are optional when indentation shows the end of the block.
+
+## After and switch
+
+```
+after 1s 500ms:
+    send later
+
+switch $arg(0):
+    case ping:
+        send pong
+    case hi:
+        send hello
+    default:
+        send try ping or hi
+```
+
+- `after <duration>:` runs the body after a delay (mixed units; capped by `max_wait`). `after 0s` runs inline.
+- `switch expr` matches `case` labels case-insensitively and falls through to `default`.
 
 ## Script functions
 
@@ -605,6 +625,16 @@ Alternatively, create an isolated bot with its own registry:
 | `http_allowlist` | `None` | Optional iterable of exact hostnames HTTP may contact |
 | `allow_insecure_http` | `False` | Allow `http://` in addition to `https://` |
 | `script_root` | first loaded file | Root directory for `import` (no path traversal) |
+| `max_wait` | `300` | Cap for `wait` / `after` / `delay` in seconds (`-1` disables) |
+| `max_repeat` | `10000` | Cap for `repeat N` |
+| `max_clear` | `100` | Cap for `clear` |
+| `component_timeout` | `300` | Discord view timeout (`0` = none) |
+| `http_timeout` | `10` | Default HTTP timeout in seconds |
+| `http_max_timeout` | `30` | Maximum HTTP timeout |
+| `http_max_body` | `1000000` | HTTP response size cap in bytes |
+| `schedule_retries` | `0` | Retries after a scheduled task fails |
+| `schedule_backoff` | `"1s"` | Backoff between schedule retries |
+| `config` | `{}` | Developer map exposed as `$config(key)` |
 
 ---
 
@@ -619,6 +649,7 @@ See the `examples/` directory:
 - `mixing.py` — scripts alongside discord.py cogs
 - `advanced.py` — conditionals, guards, state, schedules, events, slash
 - `language.py` — locals, loops, functions, components, JSON, import
+- `v13.py` — mixed durations, config, after, switch, choose
 
 Run any example after installing the package:
 

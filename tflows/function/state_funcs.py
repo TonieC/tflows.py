@@ -119,3 +119,44 @@ def setup(registry):
         return "" if value is None else str(value)
 
     registry.register_var_alias("state", "get")
+
+    @registry.register("keys")
+    async def keys_cmd(ctx, args):
+        store = _store(ctx)
+        raw = (args or "").strip() or "guild"
+        namespace, _key = _scope(ctx, raw if "." in raw else f"{raw}.")
+        items = await store.keys(namespace)
+        if items:
+            await ctx.channel.send(", ".join(items))
+
+    @registry.register("exists")
+    async def exists_cmd(ctx, args):
+        parts = (args or "").split(None, 1)
+        if not parts:
+            return
+        store = _store(ctx)
+        namespace, key = _scope(ctx, parts[0])
+        found = await store.exists(namespace, key)
+        await ctx.channel.send("true" if found else "false")
+
+    @registry.register_var("exists")
+    async def exists_var(ctx, args):
+        key = (args or "").strip().strip("'\"")
+        if not key:
+            return "false"
+        try:
+            namespace, key = _scope(ctx, key)
+            found = await _store(ctx).exists(namespace, key)
+        except RuntimeError:
+            return "false"
+        return "true" if found else "false"
+
+    @registry.register_var("keys")
+    async def keys_var(ctx, args):
+        raw = (args or "").strip().strip("'\"") or "guild"
+        try:
+            namespace, _key = _scope(ctx, raw if "." in raw else f"{raw}.")
+            items = await _store(ctx).keys(namespace)
+        except RuntimeError:
+            return ""
+        return ", ".join(items)

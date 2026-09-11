@@ -47,8 +47,10 @@ from .syntax import (
     is_endrepeat,
     is_endselect,
     is_ephemeral,
+    parse_after_header,
     parse_button_header,
     parse_call,
+    parse_case_header,
     parse_for_header,
     parse_function_header,
     parse_import,
@@ -60,9 +62,10 @@ from .syntax import (
     parse_repeat_header,
     parse_return,
     parse_select_header,
+    parse_switch_header,
     split_call_args,
 )
-from .utils import parse_color
+from .utils import parse_color, parse_duration
 
 logger = logging.getLogger("tflows.engine")
 
@@ -358,8 +361,11 @@ class Engine:
         command = getattr(ctx, "command_name", None) or "global"
         remaining = manager.check(command, scope, _scope_key(ctx, scope), seconds)
         if remaining > 0:
+            from .utils import format_duration
+
             await self._notify(
-                ctx, f"Please wait {remaining:.0f}s before using `{command}` again."
+                ctx,
+                f"Please wait {format_duration(remaining)} before using `{command}` again.",
             )
             return False
         return True
@@ -695,6 +701,36 @@ class Engine:
                             logger.exception("[tflow] Error in repeat-loop")
                 continue
 
+            after_header = parse_after_header(stripped)
+            if after_header is not None:
+                body, i = self._collect_block(
+                    lines, i, indent, {"endafter", "end after"}
+                )
+                if is_active:
+                    try:
+                        await self._run_after(ctx, after_header, body)
+                    except FlowReturn:
+                        raise
+                    except Exception:
+                        if log_errors:
+                            logger.exception("[tflow] Error in after block")
+                continue
+
+            switch_header = parse_switch_header(stripped)
+            if switch_header is not None:
+                body, i = self._collect_block(
+                    lines, i, indent, {"endswitch", "end switch"}
+                )
+                if is_active:
+                    try:
+                        await self._run_switch(ctx, switch_header, body, log_errors)
+                    except FlowReturn:
+                        raise
+                    except Exception:
+                        if log_errors:
+                            logger.exception("[tflow] Error in switch")
+                continue
+
             # ----- component blocks -----
             button_header = parse_button_header(stripped)
             if button_header is not None and stripped.lower().startswith("button"):
@@ -927,7 +963,13 @@ class Engine:
             count = int(number) if number is not None else int(str(resolved).strip() or 0)
         except (TypeError, ValueError):
             count = 0
-        count = max(0, min(count, 10_000))
+        bot = getattr(ctx, "bot", None)
+        cap = getattr(bot, "max_repeat", 10_000) if bot is not None else 10_000
+        try:
+            cap = int(cap)
+        except (TypeError, ValueError):
+            cap = 10_000
+        count = max(0, min(count, cap))
         for index in range(count):
             ctx.set_local("i", index)
             ctx.set_local("index", index)
@@ -939,6 +981,90 @@ class Engine:
                 break
             except FlowReturn:
                 raise
+
+    def _split_switch_cases(self, body):
+        cases = []
+        current = None
+        current_body = []
+        header_indent = None
+        for raw in body:
+            stripped = raw.strip()
+            if not stripped or self._is_comment(stripped):
+                if current is not None:
+                    current_body.append(raw)
+                continue
+            indent = self._indent(raw)
+            if header_indent is None:
+                header_indent = indent
+            label = parse_case_header(stripped)
+            if label is not None and indent <= (header_indent or indent):
+                if current is not None:
+                    cases.append((current, current_body))
+                current = label
+                current_body = []
+                header_indent = indent
+                continue
+            if current is not None:
+                current_body.append(raw)
+        if current is not None:
+            cases.append((current, current_body))
+        return cases
+
+    async def _run_switch(self, ctx, expr, body, log_errors):
+        resolved = stringify(await self._eval_rhs(ctx, expr)).strip().strip("'\"").lower()
+        cases = self._split_switch_cases(body)
+        chosen = None
+        default = None
+        for label, case_body in cases:
+            if label == "__default__":
+                default = case_body
+                continue
+            candidate = (await self.replace_vars(ctx, label)).strip().strip("'\"").lower()
+            if candidate == resolved:
+                chosen = case_body
+                break
+        run_body = chosen if chosen is not None else default
+        if run_body:
+            await self._run_lines(ctx, run_body)
+
+    async def _run_after(self, ctx, duration_expr, body):
+        resolved = stringify(await self._eval_rhs(ctx, duration_expr))
+        seconds = parse_duration(resolved)
+        if seconds is None:
+            seconds = parse_duration(duration_expr) or 0
+        bot = getattr(ctx, "bot", None)
+        cap = getattr(bot, "max_wait", 300) if bot is not None else 300
+        try:
+            cap = float(cap)
+        except (TypeError, ValueError):
+            cap = 300.0
+        if cap >= 0:
+            seconds = min(max(0.0, seconds), cap)
+        code = "\n".join(body)
+        if seconds <= 0:
+            await self._run_lines(ctx, code.split("\n"))
+            return None
+
+        async def _job():
+            try:
+                await asyncio.sleep(seconds)
+                await self._run_lines(ctx, code.split("\n"))
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("[tflow] delayed after-block failed")
+
+        task = asyncio.ensure_future(_job())
+        if bot is not None and hasattr(bot, "_delayed_tasks"):
+            bot._delayed_tasks.append(task)
+
+            def _cleanup(done):
+                pending = getattr(bot, "_delayed_tasks", None)
+                if pending is not None and done in pending:
+                    pending.remove(done)
+
+            task.add_done_callback(_cleanup)
+        return task
 
     async def _handle_button(self, ctx, label, attrs, body):
         from .components import add_button

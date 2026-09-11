@@ -6,6 +6,30 @@ All notable changes to tflows are documented here.
 
 No changes yet.
 
+## [1.3.0] - 2026-09-10
+
+Flexible durations, developer knobs, and extra automation primitives.
+
+### Added
+
+- **Mixed-unit durations**: `wait 1h 30m`, `cooldown 500ms per user`,
+  `every 1 hour 30 minutes:`, `timeout ... 2m 15s`. Units: `ms`, `s`, `m`,
+  `h`, `d`, `w`, plus word forms (`seconds`, `minutes`, `hours`, ...).
+- **FlowBot knobs**: `max_wait`, `max_repeat`, `max_clear`,
+  `component_timeout`, `http_timeout`, `http_max_timeout`, `http_max_body`,
+  `schedule_retries`, `schedule_backoff`, and `config={...}`.
+- **`after <duration>:`** delayed script blocks (inline when duration is 0).
+- **`switch` / `case` / `default`** branching.
+- **`choose`** / `$choose(...)` random pick; **`config`** / `$config(key)`
+  for developer-defined values; **`$duration(...)`** pretty-printer.
+- State helpers: `exists` / `$exists(key)` and `keys` / `$keys()`.
+- `delay` alias for `wait`. Scheduled tasks can retry with backoff.
+
+### Changed
+
+- Version **1.3.0**. Existing 1.1 syntax still works; single-unit durations
+  (`5s`, `2m`, `1h`) are unchanged.
+
 ## [1.1.2] - 2026-09-10
 
 Security and correctness hardening. Existing 1.1 script syntax is unchanged.

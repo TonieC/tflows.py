@@ -12,7 +12,13 @@ def setup(registry):
             count = int((args or "5").strip().split()[0])
         except (ValueError, IndexError):
             count = 5
-        count = max(1, min(count, 100))
+        bot = getattr(ctx, "bot", None)
+        cap = getattr(bot, "max_clear", 100) if bot is not None else 100
+        try:
+            cap = int(cap)
+        except (TypeError, ValueError):
+            cap = 100
+        count = max(1, min(count, max(1, cap)))
 
         if not check_permission(ctx, "perm", "manage_messages"):
             await channel.send("You do not have permission to clear messages.")

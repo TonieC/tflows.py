@@ -31,6 +31,9 @@ _ON_WHERE_RE = re.compile(
     r"^on\s+([\w\s]+?)\s+where\s+(.+?)\s*:?\s*$", re.IGNORECASE
 )
 _COMMAND_HEADER_RE = re.compile(rf"^command\s+({_IDENT})\s*:?\s*$", re.IGNORECASE)
+_AFTER_RE = re.compile(r"^after\s+(.+?)\s*:?\s*$", re.IGNORECASE)
+_SWITCH_RE = re.compile(r"^switch\s+(.+?)\s*:?\s*$", re.IGNORECASE)
+_CASE_RE = re.compile(r"^case\s+(.+?)\s*:?\s*$", re.IGNORECASE)
 _CONTEXT_MENU_RE = re.compile(
     r"^context(?:[_\s]menu)?\s+(user|message)\s+(.+?)\s*:?\s*$", re.IGNORECASE
 )
@@ -78,6 +81,32 @@ def parse_for_header(stripped: str):
 
 def parse_repeat_header(stripped: str):
     match = _REPEAT_RE.match(stripped)
+    if not match:
+        return None
+    return match.group(1).rstrip(":").strip()
+
+
+def parse_after_header(stripped: str):
+    match = _AFTER_RE.match(stripped)
+    if not match:
+        return None
+    duration = match.group(1).rstrip(":").strip()
+    return duration or None
+
+
+def parse_switch_header(stripped: str):
+    match = _SWITCH_RE.match(stripped)
+    if not match:
+        return None
+    expr = match.group(1).rstrip(":").strip()
+    return expr or None
+
+
+def parse_case_header(stripped: str):
+    low = stripped.lower().rstrip(":").strip()
+    if low == "default":
+        return "__default__"
+    match = _CASE_RE.match(stripped)
     if not match:
         return None
     return match.group(1).rstrip(":").strip()
@@ -270,6 +299,14 @@ def is_endrepeat(stripped: str) -> bool:
     return stripped.lower().rstrip(":").strip() in ("endrepeat", "end repeat")
 
 
+def is_endafter(stripped: str) -> bool:
+    return stripped.lower().rstrip(":").strip() in ("endafter", "end after")
+
+
+def is_endswitch(stripped: str) -> bool:
+    return stripped.lower().rstrip(":").strip() in ("endswitch", "end switch")
+
+
 def is_endfunction(stripped: str) -> bool:
     return stripped.lower().rstrip(":").strip() in ("endfunction", "end function", "endfn")
 
@@ -296,6 +333,8 @@ def is_block_ender(stripped: str) -> bool:
         or is_endbutton(stripped)
         or is_endselect(stripped)
         or is_endmodal(stripped)
+        or is_endafter(stripped)
+        or is_endswitch(stripped)
         or (parse_if_header(stripped) is not None and parse_if_header(stripped)[0] == "elif")
     )
 

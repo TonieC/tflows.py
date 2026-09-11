@@ -28,7 +28,7 @@ from .utils import parse_duration
 
 logger = logging.getLogger("tflows.scheduler")
 
-_EVERY_RE = re.compile(r"^every\s+([^\s:]+)\s*:?\s*$", re.IGNORECASE)
+_EVERY_RE = re.compile(r"^every\s+(.+)$", re.IGNORECASE)
 _CRON_RE = re.compile(r"^cron\s+(.+?)\s*:?\s*$", re.IGNORECASE)
 
 
@@ -37,7 +37,7 @@ def parse_every_header(line: str):
     match = _EVERY_RE.match(line.strip())
     if not match:
         return None
-    return parse_duration(match.group(1))
+    return parse_duration(match.group(1).rstrip(":").strip())
 
 
 def parse_cron_header(line: str):
@@ -148,6 +148,7 @@ class ScheduledTask:
         self._task = None
         self.runs = 0
         self._running = False
+        self.failures = 0
 
     @property
     def running(self) -> bool:
@@ -191,12 +192,24 @@ class ScheduledTask:
         if bot is None or self._running:
             return
         self._running = True
+        retries = int(getattr(bot, "schedule_retries", 0) or 0)
+        backoff = parse_duration(getattr(bot, "schedule_backoff", None)) or 1.0
+        attempt = 0
         try:
-            ctx = FlowContext.for_scheduler(bot, self.channel, command_name=self.name)
-            await bot.engine.run(ctx, self.code)
-            self.runs += 1
-        except Exception:
-            logger.exception("[tflow] scheduled task %r failed", self.name)
+            while True:
+                try:
+                    ctx = FlowContext.for_scheduler(bot, self.channel, command_name=self.name)
+                    await bot.engine.run(ctx, self.code)
+                    self.runs += 1
+                    self.failures = 0
+                    return
+                except Exception:
+                    self.failures += 1
+                    logger.exception("[tflow] scheduled task %r failed", self.name)
+                    if attempt >= retries:
+                        return
+                    attempt += 1
+                    await asyncio.sleep(min(backoff * attempt, 60.0))
         finally:
             self._running = False
 

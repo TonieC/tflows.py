@@ -86,6 +86,11 @@ _CORE_FUNCTIONS = {
     "show_modal",
     "server",
     "membercount",
+    "choose",
+    "config",
+    "delay",
+    "keys",
+    "exists",
 }
 
 _CORE_VARS = {
@@ -113,6 +118,11 @@ _CORE_VARS = {
     "image",
     "prefix",
     "command",
+    "config",
+    "choose",
+    "duration",
+    "exists",
+    "keys",
     "message",
     "emoji",
     "value",

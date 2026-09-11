@@ -125,7 +125,13 @@ def build_view(ctx):
     try:
         import discord
 
-        view = discord.ui.View(timeout=300)
+        bot = getattr(ctx, "bot", None)
+        timeout = getattr(bot, "component_timeout", 300) if bot is not None else 300
+        try:
+            timeout = float(timeout)
+        except (TypeError, ValueError):
+            timeout = 300
+        view = discord.ui.View(timeout=timeout if timeout > 0 else None)
         for spec in pending:
             if spec.kind == "button":
                 style = _discord_style(spec.fields.get("style", "primary"))

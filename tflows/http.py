@@ -32,13 +32,14 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .runtime import FlowValue, stringify
+from .utils import parse_duration
 
 logger = logging.getLogger("tflows.http")
 
 _DEFAULT_TIMEOUT = 10
 _MAX_BODY = 1_000_000  # 1 MiB
 _ALLOWED_SCHEMES = {"https"}
-_USER_AGENT = "tflows/1.1.2 (+https://github.com/TonieC/tflows.py)"
+_USER_AGENT = "tflows/1.3 (+https://github.com/TonieC/tflows.py)"
 
 
 @dataclass
@@ -72,6 +73,31 @@ def _allowlist(ctx) -> set[str] | None:
 def _allow_insecure(ctx) -> bool:
     bot = getattr(ctx, "bot", None)
     return bool(getattr(bot, "allow_insecure_http", False)) if bot is not None else False
+
+
+def _http_timeout(ctx, requested) -> float:
+    bot = getattr(ctx, "bot", None)
+    default = getattr(bot, "http_timeout", None) if bot is not None else None
+    cap = getattr(bot, "http_max_timeout", None) if bot is not None else None
+    try:
+        fallback = float(default) if default is not None else _DEFAULT_TIMEOUT
+    except (TypeError, ValueError):
+        fallback = _DEFAULT_TIMEOUT
+    try:
+        maximum = float(cap) if cap is not None else 30.0
+    except (TypeError, ValueError):
+        maximum = 30.0
+    timeout = requested if requested is not None else fallback
+    return max(0.1, min(float(timeout), maximum))
+
+
+def _http_max_body(ctx) -> int:
+    bot = getattr(ctx, "bot", None)
+    value = getattr(bot, "http_max_body", None) if bot is not None else None
+    try:
+        return max(1, int(value)) if value is not None else _MAX_BODY
+    except (TypeError, ValueError):
+        return _MAX_BODY
 
 
 _BLOCKED_HOSTNAMES = {
@@ -139,7 +165,7 @@ def _parse_http_args(args: str) -> tuple[str, dict]:
     """Split ``url key=value ...`` plus ``header=Name: Value`` / ``body=...``."""
     text = (args or "").strip()
     url = ""
-    options: dict[str, Any] = {"headers": {}, "query": {}, "body": None, "timeout": _DEFAULT_TIMEOUT}
+    options: dict[str, Any] = {"headers": {}, "query": {}, "body": None, "timeout": None}
     if not text:
         return url, options
     # URL is the first token, optionally quoted.
@@ -204,10 +230,9 @@ def _parse_http_args(args: str) -> tuple[str, dict]:
             if key == "json":
                 options["headers"].setdefault("Content-Type", "application/json")
         elif key == "timeout":
-            try:
-                options["timeout"] = max(1, min(float(value), 30))
-            except ValueError:
-                pass
+            parsed = parse_duration(value)
+            if parsed is not None:
+                options["timeout"] = parsed
         else:
             options[key] = value
     return url, options
@@ -238,7 +263,8 @@ def _request(ctx, method: str, args: str) -> HttpResponse:
     if body is not None:
         data = body.encode("utf-8") if isinstance(body, str) else body
     request = Request(url, data=data, headers=headers, method=method.upper())
-    timeout = options["timeout"]
+    timeout = _http_timeout(ctx, options["timeout"])
+    max_body = _http_max_body(ctx)
 
     class _NoRedirect(HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):
@@ -247,10 +273,10 @@ def _request(ctx, method: str, args: str) -> HttpResponse:
     opener = build_opener(_NoRedirect)
     try:
         with opener.open(request, timeout=timeout) as resp:
-            raw = resp.read(_MAX_BODY + 1)
-            if len(raw) > _MAX_BODY:
-                raw = raw[:_MAX_BODY]
-                logger.warning("[tflow] HTTP response truncated at %s bytes", _MAX_BODY)
+            raw = resp.read(max_body + 1)
+            if len(raw) > max_body:
+                raw = raw[:max_body]
+                logger.warning("[tflow] HTTP response truncated at %s bytes", max_body)
             response.status = getattr(resp, "status", 200) or 200
             response.body = raw.decode("utf-8", errors="replace")
             response.headers = {k.lower(): v for k, v in resp.headers.items()}
@@ -262,7 +288,7 @@ def _request(ctx, method: str, args: str) -> HttpResponse:
         return response
     except HTTPError as exc:
         try:
-            raw = exc.read(_MAX_BODY)
+            raw = exc.read(max_body)
             response.body = raw.decode("utf-8", errors="replace")
         except Exception:
             response.body = ""
