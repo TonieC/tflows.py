@@ -156,11 +156,6 @@ def _bare_filter_value(ctx, name: str):
     if value is not None:
         from .runtime import stringify
 
-        if lowered in ("user", "author", "member"):
-            uid = getattr(value, "id", None)
-            if uid is not None:
-                return str(uid)
-            return stringify(value)
         if lowered == "channel":
             cname = getattr(value, "name", None)
             if cname is not None:
@@ -178,6 +173,10 @@ def _bare_filter_value(ctx, name: str):
     if lowered in ("user", "author", "member"):
         author = getattr(ctx, "author", None)
         return str(getattr(author, "display_name", getattr(author, "name", "")) or "")
+    if lowered in ("user_id", "userid"):
+        user = extras.get("user") or extras.get("author") or extras.get("member") or getattr(ctx, "author", None)
+        uid = getattr(user, "id", None)
+        return str(uid) if uid is not None else ""
     if lowered == "message":
         message = extras.get("message") or getattr(ctx, "message", None)
         return str(getattr(message, "content", extras.get("content", "")) or "")

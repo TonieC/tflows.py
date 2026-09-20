@@ -1,5 +1,7 @@
 """tflows 1.3.0: delete/edit events, sendto/embedto, $dm, $errormsg, $before/$after."""
 
+import asyncio
+
 import pytest
 
 from tests.fakes import FakeChannel, FakeGuild, FakeMessage, FakeUser, make_bot, make_ctx
@@ -203,9 +205,34 @@ async def test_edit_content_is_after(bot):
 # ---------------------------------------------------------------------------
 # where filtering
 # ---------------------------------------------------------------------------
+async def test_where_user_matches_name_not_id(bot):
+    channel = FakeChannel(name="welcome")
+    guild = FakeGuild()
+    guild.system_channel = channel
+    tester = FakeUser(id=7, name="Tester")
+    tester.guild = guild
+    bot.on_event("join", "send Welcome", where="user == Tester")
+    await bot.dispatch_event("on_member_join", tester)
+    assert [a[0] for a, _ in channel.sent] == ["Welcome"]
+    other = FakeUser(id=8, name="Other")
+    other.guild = guild
+    await bot.dispatch_event("on_member_join", other)
+    assert [a[0] for a, _ in channel.sent] == ["Welcome"]
+
+
+async def test_delete_where_user_name(bot):
+    dest = attach_channel(bot, FakeChannel(name="log", id=1437))
+    bot.on_event("delete", "sendto 1437 deleted: $content", where="user == Alice")
+    match = deleted_message(bot, content="keep", author=FakeUser(id=99, name="Alice"))
+    other = deleted_message(bot, content="skip", author=FakeUser(id=1, name="Bob"))
+    await bot.dispatch_event("on_message_delete", match)
+    await bot.dispatch_event("on_message_delete", other)
+    assert sent(dest) == ["deleted: keep"]
+
+
 async def test_delete_where_user_id(bot):
     dest = attach_channel(bot, FakeChannel(name="log", id=1437))
-    bot.on_event("delete", "sendto 1437 deleted: $content", where="user == 123456789")
+    bot.on_event("delete", "sendto 1437 deleted: $content", where="user_id == 123456789")
     match = deleted_message(bot, content="keep", author=FakeUser(id=123456789, name="Alice"))
     other = deleted_message(bot, content="skip", author=FakeUser(id=1, name="Bob"))
     await bot.dispatch_event("on_message_delete", match)
@@ -213,9 +240,9 @@ async def test_delete_where_user_id(bot):
     assert sent(dest) == ["deleted: keep"]
 
 
-async def test_edit_where_user_id(bot):
+async def test_edit_where_user_id_var(bot):
     dest = attach_channel(bot, FakeChannel(name="log", id=5))
-    bot.on_event("edit", "sendto 5 hit", where="user == 99")
+    bot.on_event("edit", "sendto 5 hit", where="$user_id == 99")
     channel = FakeChannel()
     ok = FakeUser(id=99, name="Ok")
     no = FakeUser(id=1, name="No")
@@ -374,6 +401,59 @@ async def test_on_error_event_uses_errormsg(bot):
     await bot.engine.run(ctx, "not_a_real_fn foo")
     assert sent(dest)
     assert "unknown function" in sent(dest)[0].lower()
+
+
+async def test_concurrent_on_error_does_not_drop(bot):
+    dest = attach_channel(bot, FakeChannel(name="log", id=1437))
+    first_entered = asyncio.Event()
+    release = asyncio.Event()
+    in_handler = 0
+
+    @bot.engine.registry.register("slowerr")
+    async def slowerr(ctx, args):
+        nonlocal in_handler
+        in_handler += 1
+        if in_handler == 1:
+            first_entered.set()
+            await release.wait()
+
+    try:
+        bot.on_event("error", "slowerr\nsendto 1437 ERROR: $errormsg")
+        ctx1 = make_ctx(bot, message=FakeMessage(content="!t", client=bot))
+        ctx2 = make_ctx(bot, message=FakeMessage(content="!t", client=bot))
+        task1 = asyncio.create_task(bot.engine.run(ctx1, "nope_fn_one"))
+        await asyncio.wait_for(first_entered.wait(), timeout=2)
+        task2 = asyncio.create_task(bot.engine.run(ctx2, "nope_fn_two"))
+        await asyncio.sleep(0.05)
+        release.set()
+        await asyncio.gather(task1, task2)
+        texts = sent(dest)
+        assert len(texts) == 2
+        assert all("unknown function" in text.lower() for text in texts)
+    finally:
+        bot.engine.registry.unregister("slowerr")
+
+
+async def test_condition_eval_error_emits_on_error(bot, monkeypatch):
+    dest = attach_channel(bot, FakeChannel(name="log", id=1437))
+    bot.on_event("error", "sendto 1437 ERROR: $errormsg")
+
+    async def boom(ctx, engine, expr):
+        raise RuntimeError("boom-cond")
+
+    monkeypatch.setattr("tflows.engine.evaluate_condition", boom)
+    ctx = make_ctx(bot, message=FakeMessage(content="!t", client=bot))
+    await bot.engine.run(ctx, "if 1 == 1:\n    send should-not\nsend after")
+    assert ctx._error_pending is False
+    texts = sent(dest)
+    assert len(texts) == 1
+    assert "boom-cond" in texts[0]
+    assert "failed to evaluate condition" in texts[0]
+    assert sent(ctx.channel) == ["after"]
+    dest.sent.clear()
+    await bot.engine.run(ctx, "send reused")
+    assert sent(ctx.channel)[-1] == "reused"
+    assert sent(dest) == []
 
 
 # ---------------------------------------------------------------------------

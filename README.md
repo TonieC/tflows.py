@@ -361,7 +361,7 @@ on delete
 on edit
     sendto 143700000000000000 before: $before after: $after
 
-on delete where user == 123456789012345678
+on delete where $user_id == 123456789012345678
     sendto 143700000000000000 deleted: $content
 
 on error

@@ -362,14 +362,18 @@ class Engine:
         return record_error(ctx, message)
 
     async def _emit_error(self, ctx, message: str) -> None:
-        """Record ``$errormsg`` and run ``on error`` handlers without recursing."""
+        """Record ``$errormsg`` and run ``on error`` handlers without recursing.
+
+        Recursion is guarded per context/dispatch so a second concurrent error
+        on a different run is not dropped.
+        """
         text = self._set_error(ctx, message)
         if ctx is not None:
             ctx._error_pending = False
+            if getattr(ctx, "_emitting_error", False):
+                return
         bot = getattr(ctx, "bot", None)
         if bot is None:
-            return
-        if getattr(bot, "_emitting_error", False):
             return
         dispatch = getattr(bot, "dispatch_event", None)
         if not callable(dispatch):
@@ -386,13 +390,15 @@ class Engine:
         extras.setdefault("message", getattr(ctx, "message", None))
         extras.setdefault("guild", getattr(ctx, "guild", None))
         extras.setdefault("content", getattr(getattr(ctx, "message", None), "content", "") or "")
-        bot._emitting_error = True
+        if ctx is not None:
+            ctx._emitting_error = True
         try:
             await dispatch("on_tflow_error", extras)
         except Exception:
             logger.exception("[tflow] Error in on-error handler")
         finally:
-            bot._emitting_error = False
+            if ctx is not None:
+                ctx._emitting_error = False
 
     def _consume_view(self, ctx):
         from .components import build_view
@@ -548,12 +554,15 @@ class Engine:
 
         extras = getattr(ctx, "extras", None)
         seed = ""
-        if isinstance(extras, dict) and extras.get("_tflow_error_event"):
+        in_error_event = isinstance(extras, dict) and extras.get("_tflow_error_event")
+        if in_error_event:
             seed = extras.get("errormsg") or ""
             extras.pop("_tflow_error_event", None)
         elif isinstance(extras, dict):
             extras.pop("errormsg", None)
         ctx.last_error = str(seed) if seed else ""
+        ctx._error_pending = False
+        ctx._emitting_error = bool(in_error_event)
         if seed and isinstance(extras, dict):
             extras["errormsg"] = seed
 
@@ -627,9 +636,9 @@ class Engine:
                         result = await evaluate_condition(ctx, self, expr)
                     except Exception as exc:
                         msg = f"failed to evaluate condition {expr!r}: {exc}"
-                        self._set_error(ctx, msg)
                         if log_errors:
                             logger.exception("[tflow] Failed to evaluate condition: %s", expr)
+                        await self._emit_error(ctx, msg)
                         result = False
                 else:
                     result = False
@@ -692,9 +701,9 @@ class Engine:
                             result = await evaluate_condition(ctx, self, expr)
                         except Exception as exc:
                             msg = f"failed to evaluate condition {expr!r}: {exc}"
-                            self._set_error(ctx, msg)
                             if log_errors:
                                 logger.exception("[tflow] Failed to evaluate condition: %s", expr)
+                            await self._emit_error(ctx, msg)
                             result = False
                         frame["branch_active"] = bool(result)
                         if result:

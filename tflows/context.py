@@ -57,6 +57,7 @@ class FlowContext:
         "return_value",
         "last_error",
         "_error_pending",
+        "_emitting_error",
     )
 
     def __init__(
@@ -89,6 +90,7 @@ class FlowContext:
         self.return_value = None
         self.last_error = ""
         self._error_pending = False
+        self._emitting_error = False
 
     def set_local(self, name: str, value) -> None:
         if isinstance(value, FlowValue):
@@ -126,6 +128,7 @@ class FlowContext:
         child.deferred = self.deferred
         child.last_error = getattr(self, "last_error", "") or ""
         child._error_pending = getattr(self, "_error_pending", False)
+        child._emitting_error = getattr(self, "_emitting_error", False)
         for name, value in bound.items():
             child.set_local(name, value)
         return child

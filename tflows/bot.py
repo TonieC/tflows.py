@@ -197,7 +197,6 @@ class FlowBot(commands.Bot):
         self.add_listener(self._tflow_on_message_edit, "on_message_edit")
         self.add_listener(self._tflow_on_interaction, "on_interaction")
         self._last_errormsg = ""
-        self._emitting_error = False
 
     # ------------------------------------------------------------------
     # Persistent state (lazy so unused bots pay nothing)

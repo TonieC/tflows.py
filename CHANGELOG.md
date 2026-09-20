@@ -26,13 +26,15 @@ Delete/edit events, targeted send, DMs, and script-visible errors. Existing 1.1/
   `on error` handlers can report it, e.g. `sendto ... ERROR: $errormsg`.
 - **`$dm <user-or-users> <message>`**: DM one user, a user id, a variable, or a
   collection (`$users`). One failed recipient does not block the rest.
-- Delete/edit events work with existing `where` filters (`where user == 123...`).
+- Delete/edit events work with existing `where` filters (`where user == Tester`).
+  Match numeric ids with `user_id` / `$user_id` (`where $user_id == 123...`).
 - Message logging can be implemented entirely in `.tflow` scripts (see
   `examples/message_logger.tflow`).
 
 ### Changed
 
 - Version **1.3.0**.
+- `where user` matches the user name (1.1/1.2). Filter by id with `user_id` or `$user_id`.
 
 ## [1.2.0] - 2026-09-10
 
