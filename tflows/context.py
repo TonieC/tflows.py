@@ -55,6 +55,8 @@ class FlowContext:
         "interaction",
         "filename",
         "return_value",
+        "last_error",
+        "_error_pending",
     )
 
     def __init__(
@@ -85,6 +87,8 @@ class FlowContext:
         self.interaction = interaction
         self.filename = filename
         self.return_value = None
+        self.last_error = ""
+        self._error_pending = False
 
     def set_local(self, name: str, value) -> None:
         if isinstance(value, FlowValue):
@@ -120,6 +124,8 @@ class FlowContext:
         child.component_handlers = self.component_handlers
         child.ephemeral = self.ephemeral
         child.deferred = self.deferred
+        child.last_error = getattr(self, "last_error", "") or ""
+        child._error_pending = getattr(self, "_error_pending", False)
         for name, value in bound.items():
             child.set_local(name, value)
         return child
@@ -345,5 +351,21 @@ class _NullAuthor:
         return self.name
 
 
+def record_error(ctx, message: str) -> str:
+    """Store a human-readable script error on the current context.
+
+    Used by ``$errormsg`` and ``on error``. Does not raise.
+    """
+    text = "" if message is None else str(message)
+    if ctx is None:
+        return text
+    ctx.last_error = text
+    ctx._error_pending = True
+    bot = getattr(ctx, "bot", None)
+    if bot is not None:
+        bot._last_errormsg = text
+    return text
+
+
 # stringify is imported for callers that want a consistent conversion
-__all__ = ["FlowContext", "stringify"]
+__all__ = ["FlowContext", "stringify", "record_error"]

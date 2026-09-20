@@ -54,6 +54,10 @@ class Diagnostic:
 
 _CORE_FUNCTIONS = {
     "send",
+    "sendto",
+    "embedto",
+    "dm",
+    "$dm",
     "reply",
     "log",
     "wait",
@@ -134,6 +138,11 @@ _CORE_VARS = {
     "content",
     "input",
     "response",
+    "before",
+    "after",
+    "errormsg",
+    "users",
+    "user_id",
 }
 
 
@@ -263,7 +272,7 @@ def check_source(source: str, filename: str = "<script>", registry=None) -> list
             i += 1
             continue
 
-        if stripped == "embed":
+        if stripped == "embed" or stripped.lower() == "embedto" or stripped.lower().startswith("embedto "):
             stack.append(("embed", line_no, _indent(raw)))
             i += 1
             continue
@@ -341,9 +350,11 @@ def check_source(source: str, filename: str = "<script>", registry=None) -> list
             "input",
             "command",
             "context",
+            "$dm",
         }
-        if name.lower() not in skip and name not in known_functions and name not in defined_functions:
-            if name.isidentifier() or "." in name:
+        lookup = name[1:] if name.startswith("$") else name
+        if name.lower() not in skip and lookup.lower() not in skip and name not in known_functions and lookup not in known_functions and name not in defined_functions:
+            if name.isidentifier() or lookup.isidentifier() or "." in name:
                 error(line_no, column, f"unknown function `{name}`", severity="warning")
         i += 1
 

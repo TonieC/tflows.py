@@ -139,6 +139,10 @@ arguments. Usage is `$name` or `$name(option)`.
 | `$prefix` | — | The bot's command prefix |
 | `$command` | — | The currently running command name |
 | `$message` | `content`, `id`, `author` | The triggering message (events / context menus) |
+| `$before` / `$after` | — | Previous / new message content on `edit` / `delete` |
+| `$errormsg` | — | Human-readable error from the current script run |
+| `$users` | `bots`, `users` | Guild members (objects; for `$dm` and `for` loops) |
+| `$user_id` | — | Author / event user id |
 | `$emoji` | — | Reaction emoji on `react` / `unreact` events |
 | `$value` | — | Selected value from a select menu |
 | `$input` / `$input.field` | field custom id | Modal text-input values |
@@ -178,6 +182,9 @@ Every line of a script calls one function:
 | Function | Example | Description |
 | --- | --- | --- |
 | `send` | `send hello` | Sends a message to the current channel |
+| `sendto` | `sendto 1437... deleted: $content` | Sends to a channel id (`get_channel` then `fetch_channel`) |
+| `embedto` | `embedto 1437...` / `endembed` | Embed block sent to a channel id |
+| `$dm` / `dm` | `$dm $user Hello!` | DM a user, user id, variable, or `$users` collection |
 | `reply` | `reply hi $user` | Replies to the invoking message |
 | `log` | `log command ran` | Prints a message to the console |
 | `wait` / `delay` | `wait 1h 30m` | Waits; mixed units (`ms`/`s`/`m`/`h`/`d`/`w`); capped by `max_wait` |
@@ -340,9 +347,31 @@ bot.on_event("react", "send $user(display) reacted!")  # reaction added
 
 A leading `on <event>:` header inside the code is accepted verbatim.
 Supported names include `join`, `leave`/`remove`, `react`/`reaction`,
-`unreact`, `message`, `typing` (see `tflows.events.EVENT_MAP`); new events
-are added by extending that map without changing the language. Handlers are
-removed with `bot.remove_event("join", name)`.
+`unreact`, `message`, `typing`, `delete`/`message_delete`, `edit`/`message_edit`,
+`error` (see `tflows.events.EVENT_MAP`); new events are added by extending
+that map without changing the language. Handlers are removed with
+`bot.remove_event("join", name)`.
+
+A message logger can be written entirely in `.tflow` (no custom Python):
+
+```
+on delete
+    sendto 143700000000000000 deleted: $content
+
+on edit
+    sendto 143700000000000000 before: $before after: $after
+
+on delete where user == 123456789012345678
+    sendto 143700000000000000 deleted: $content
+
+on error
+    sendto 143700000000000000 ERROR: $errormsg
+```
+
+```
+$dm $user Hello!
+$dm $users Server maintenance starts soon.
+```
 
 ---
 
@@ -544,7 +573,7 @@ on join where role == "Member":
     send Welcome $user(mention)!
 ```
 
-`where` uses the same operators as `if`. Bare identifiers `channel`, `user`, `message`, `emoji`, `value`, `role` resolve from the event. Extra `$variables` on events: `$user`, `$message`, `$emoji`, `$content`.
+`where` uses the same operators as `if`. Bare identifiers `channel`, `user`, `message`, `emoji`, `value`, `role` resolve from the event (`user` is the user id). Extra `$variables` on events: `$user`, `$message`, `$emoji`, `$content`, `$before`, `$after`, `$errormsg`.
 
 Context menus:
 
@@ -646,6 +675,9 @@ See the `examples/` directory:
 - `variables.py` — variable showcase
 - `embeds.py` — block and single-line embeds
 - `automation.py` — `wait`, `react`, `delete`, `clear`
+- `message_logger.tflow` — delete/edit logging with `sendto` / `$errormsg`
+- `dm.tflow` — `$dm $user` and `$dm $users`
+- `embedto.tflow` — `embedto` on delete
 - `mixing.py` — scripts alongside discord.py cogs
 - `advanced.py` — conditionals, guards, state, schedules, events, slash
 - `language.py` — locals, loops, functions, components, JSON, import

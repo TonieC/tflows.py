@@ -14,7 +14,7 @@ import re
 import discord
 
 from .conditionals import evaluate_condition, is_else, is_endif, parse_if_header
-from .context import FlowContext
+from .context import FlowContext, record_error
 from .events import parse_on_header
 from .expressions import (
     evaluate_expression,
@@ -295,8 +295,8 @@ class Engine:
                 embed.set_image(url=value)
             return
 
-    async def parse_embed(self, ctx, block):
-        """Parse and send an ``embed``/``endembed`` block."""
+    async def build_embed(self, ctx, block):
+        """Parse an ``embed``/``endembed`` block into a :class:`discord.Embed`."""
         block = block.replace("\r\n", "\n").strip()
         embed = discord.Embed()
 
@@ -320,15 +320,79 @@ class Engine:
             else:
                 self._apply_embed(embed, key, resolved)
 
-        # Fall back to whatever text is left when no explicit $desc[...] given.
         if not values.get("desc") and clean:
             embed.description = await self.replace_vars(ctx, clean)
+        return embed
 
+    async def parse_embed(self, ctx, block, channel=None):
+        """Parse and send an ``embed``/``endembed`` block."""
+        embed = await self.build_embed(ctx, block)
         kwargs = {}
         view = self._consume_view(ctx)
         if view is not None:
             kwargs["view"] = view
-        await ctx.channel.send(embed=embed, **kwargs)
+        target = channel if channel is not None else ctx.channel
+        await target.send(embed=embed, **kwargs)
+
+    async def _send_embedto(self, ctx, header: str, block: str) -> None:
+        from .utils import resolve_channel
+
+        header = await self.replace_vars(ctx, header or "")
+        channel_id = (header or "").split(None, 1)[0].strip()
+        if not channel_id:
+            msg = "embedto: missing channel id"
+            logger.warning("[tflow] %s", msg)
+            await self._emit_error(ctx, msg)
+            return
+        bot = getattr(ctx, "bot", None)
+        channel, err = await resolve_channel(bot, channel_id)
+        if channel is None:
+            msg = err or f"embedto: channel not found: {channel_id}"
+            logger.warning("[tflow] %s", msg)
+            await self._emit_error(ctx, msg)
+            return
+        try:
+            await self.parse_embed(ctx, block, channel=channel)
+        except Exception as exc:
+            msg = f"failed to send embed to channel {channel_id}: {exc}"
+            logger.exception("[tflow] %s", msg)
+            await self._emit_error(ctx, msg)
+
+    def _set_error(self, ctx, message: str) -> str:
+        return record_error(ctx, message)
+
+    async def _emit_error(self, ctx, message: str) -> None:
+        """Record ``$errormsg`` and run ``on error`` handlers without recursing."""
+        text = self._set_error(ctx, message)
+        if ctx is not None:
+            ctx._error_pending = False
+        bot = getattr(ctx, "bot", None)
+        if bot is None:
+            return
+        if getattr(bot, "_emitting_error", False):
+            return
+        dispatch = getattr(bot, "dispatch_event", None)
+        if not callable(dispatch):
+            return
+        events = getattr(bot, "events", None)
+        handlers = events.get("on_tflow_error") if events is not None else []
+        if not handlers:
+            return
+        extras = dict(getattr(ctx, "extras", None) or {})
+        extras["errormsg"] = text
+        extras["_tflow_error_event"] = True
+        extras.setdefault("user", getattr(ctx, "author", None))
+        extras.setdefault("channel", getattr(ctx, "channel", None))
+        extras.setdefault("message", getattr(ctx, "message", None))
+        extras.setdefault("guild", getattr(ctx, "guild", None))
+        extras.setdefault("content", getattr(getattr(ctx, "message", None), "content", "") or "")
+        bot._emitting_error = True
+        try:
+            await dispatch("on_tflow_error", extras)
+        except Exception:
+            logger.exception("[tflow] Error in on-error handler")
+        finally:
+            bot._emitting_error = False
 
     def _consume_view(self, ctx):
         from .components import build_view
@@ -482,6 +546,17 @@ class Engine:
         if not isinstance(ctx, FlowContext):
             ctx = FlowContext.from_message(ctx)
 
+        extras = getattr(ctx, "extras", None)
+        seed = ""
+        if isinstance(extras, dict) and extras.get("_tflow_error_event"):
+            seed = extras.get("errormsg") or ""
+            extras.pop("_tflow_error_event", None)
+        elif isinstance(extras, dict):
+            extras.pop("errormsg", None)
+        ctx.last_error = str(seed) if seed else ""
+        if seed and isinstance(extras, dict):
+            extras["errormsg"] = seed
+
         lines = (code or "").split("\n")
         if not await self._enforce_leading_guards(ctx, lines):
             return ctx.return_value
@@ -550,7 +625,9 @@ class Engine:
                 elif parent_active:
                     try:
                         result = await evaluate_condition(ctx, self, expr)
-                    except Exception:
+                    except Exception as exc:
+                        msg = f"failed to evaluate condition {expr!r}: {exc}"
+                        self._set_error(ctx, msg)
                         if log_errors:
                             logger.exception("[tflow] Failed to evaluate condition: %s", expr)
                         result = False
@@ -583,9 +660,12 @@ class Engine:
                     raise
                 except (FlowBreak, FlowContinue):
                     raise
-                except Exception:
+                except Exception as exc:
+                    msg = f"error in line `{stripped}`: {exc}"
+                    self._set_error(ctx, msg)
                     if log_errors:
                         logger.exception("[tflow] Error in line: %s", stripped)
+                    await self._emit_error(ctx, msg)
                 i += 1
                 continue
 
@@ -610,7 +690,9 @@ class Engine:
                     if frame["parent_active"] and not frame["matched"]:
                         try:
                             result = await evaluate_condition(ctx, self, expr)
-                        except Exception:
+                        except Exception as exc:
+                            msg = f"failed to evaluate condition {expr!r}: {exc}"
+                            self._set_error(ctx, msg)
                             if log_errors:
                                 logger.exception("[tflow] Failed to evaluate condition: %s", expr)
                             result = False
@@ -628,8 +710,12 @@ class Engine:
             if stack and indent > stack[-1]["if_indent"] and stripped:
                 stack[-1]["saw_body"] = True
 
-            # ----- embed block -----
-            if stripped == "embed":
+            # ----- embed / embedto block -----
+            embedto_header = None
+            low = stripped.lower()
+            if low == "embedto" or low.startswith("embedto "):
+                embedto_header = stripped.split(None, 1)[1].strip() if low != "embedto" else ""
+            if stripped == "embed" or embedto_header is not None:
                 i += 1
                 block = []
                 while i < len(lines):
@@ -639,10 +725,16 @@ class Engine:
                     i += 1
                 if is_active:
                     try:
-                        await self.parse_embed(ctx, "\n".join(block))
-                    except Exception:
+                        if embedto_header is not None:
+                            await self._send_embedto(ctx, embedto_header, "\n".join(block))
+                        else:
+                            await self.parse_embed(ctx, "\n".join(block))
+                    except Exception as exc:
+                        msg = f"failed to render embed block: {exc}"
+                        self._set_error(ctx, msg)
                         if log_errors:
                             logger.exception("[tflow] Failed to render embed block")
+                        await self._emit_error(ctx, msg)
                 i += 1
                 continue
 
@@ -680,9 +772,12 @@ class Engine:
                         await self._run_for(ctx, var_name, iterable_expr, body, log_errors)
                     except FlowReturn:
                         raise
-                    except Exception:
+                    except Exception as exc:
+                        msg = f"error in for-loop: {exc}"
+                        self._set_error(ctx, msg)
                         if log_errors:
                             logger.exception("[tflow] Error in for-loop")
+                        await self._emit_error(ctx, msg)
                 continue
 
             repeat_header = parse_repeat_header(stripped)
@@ -696,9 +791,12 @@ class Engine:
                         await self._run_repeat(ctx, count_expr, body, log_errors)
                     except FlowReturn:
                         raise
-                    except Exception:
+                    except Exception as exc:
+                        msg = f"error in repeat-loop: {exc}"
+                        self._set_error(ctx, msg)
                         if log_errors:
                             logger.exception("[tflow] Error in repeat-loop")
+                        await self._emit_error(ctx, msg)
                 continue
 
             after_header = parse_after_header(stripped)
@@ -711,9 +809,12 @@ class Engine:
                         await self._run_after(ctx, after_header, body)
                     except FlowReturn:
                         raise
-                    except Exception:
+                    except Exception as exc:
+                        msg = f"error in after block: {exc}"
+                        self._set_error(ctx, msg)
                         if log_errors:
                             logger.exception("[tflow] Error in after block")
+                        await self._emit_error(ctx, msg)
                 continue
 
             switch_header = parse_switch_header(stripped)
@@ -726,9 +827,12 @@ class Engine:
                         await self._run_switch(ctx, switch_header, body, log_errors)
                     except FlowReturn:
                         raise
-                    except Exception:
+                    except Exception as exc:
+                        msg = f"error in switch: {exc}"
+                        self._set_error(ctx, msg)
                         if log_errors:
                             logger.exception("[tflow] Error in switch")
+                        await self._emit_error(ctx, msg)
                 continue
 
             # ----- component blocks -----
@@ -814,9 +918,12 @@ class Engine:
                     await self._assign(ctx, let[0], let[1])
                 except FlowReturn:
                     raise
-                except Exception:
+                except Exception as exc:
+                    msg = f"error in let `{stripped}`: {exc}"
+                    self._set_error(ctx, msg)
                     if log_errors:
                         logger.exception("[tflow] Error in let: %s", stripped)
+                    await self._emit_error(ctx, msg)
                 i += 1
                 continue
 
@@ -826,9 +933,12 @@ class Engine:
             ):
                 try:
                     await self._assign(ctx, assigned[0], assigned[1])
-                except Exception:
+                except Exception as exc:
+                    msg = f"error in assignment `{stripped}`: {exc}"
+                    self._set_error(ctx, msg)
                     if log_errors:
                         logger.exception("[tflow] Error in assignment: %s", stripped)
+                    await self._emit_error(ctx, msg)
                 i += 1
                 continue
 
@@ -851,9 +961,16 @@ class Engine:
                 await self.execute_line(ctx, stripped)
             except (FlowReturn, FlowBreak, FlowContinue):
                 raise
-            except Exception:
+            except Exception as exc:
+                msg = f"error in line `{stripped}`: {exc}"
+                self._set_error(ctx, msg)
                 if log_errors:
                     logger.exception("[tflow] Error in line: %s", stripped)
+                await self._emit_error(ctx, msg)
+            else:
+                if getattr(ctx, "_error_pending", False):
+                    ctx._error_pending = False
+                    await self._emit_error(ctx, getattr(ctx, "last_error", "") or "")
 
             i += 1
 
@@ -1167,6 +1284,11 @@ class Engine:
 
     async def execute_line(self, ctx, line):
         """Resolve variables in ``line`` and dispatch it as a function call."""
+        # `$dm` / `dm` must run before interpolation so recipients stay objects.
+        first = (line.split(None, 1)[0] if line.strip() else "")
+        if first in ("$dm", "dm"):
+            return await self._run_dm(ctx, line)
+
         # Script-function call with parentheses: greet("Ada") — resolve args
         # after splitting so quoted commas survive.
         call = parse_call(line)
@@ -1205,12 +1327,54 @@ class Engine:
             bot = getattr(ctx, "bot", None)
             if bot is None or getattr(bot, "log_unknown_functions", True):
                 logger.info("[tflow] Unknown function: %s", name)
+            self._set_error(ctx, f"unknown function `{name}`")
             return
 
         result = func(ctx, args)
         if asyncio.iscoroutine(result):
             result = await result
         return result
+
+    async def _run_dm(self, ctx, line: str):
+        """Send DMs, resolving the recipient before it is stringified."""
+        from .function.send import send_dm
+
+        rest = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else ""
+        rest = rest.strip()
+        if not rest:
+            msg = "dm: missing recipient"
+            logger.warning("[tflow] %s", msg)
+            self._set_error(ctx, msg)
+            return
+        recipient_token, sep, message = rest.partition(" ")
+        if not sep:
+            message = ""
+        token = recipient_token.strip()
+        recipient = token
+        extras = getattr(ctx, "extras", None) or {}
+        if token in ("$user", "$author"):
+            recipient = extras.get("user") or extras.get("author") or getattr(ctx, "author", None)
+        elif token == "$users":
+            if "users" in extras:
+                recipient = extras["users"]
+            else:
+                found, value = await self.resolve_var_value(ctx, "users", "", "")
+                recipient = value if found else []
+        elif token.startswith("$"):
+            match = _VAR_PATTERN.fullmatch(token)
+            if match:
+                name, path, args = match.group(1), match.group(2) or "", match.group(3) or ""
+                if name.lower() in ("user", "author") and not path and not args:
+                    recipient = extras.get("user") or extras.get("author") or getattr(ctx, "author", None)
+                else:
+                    found, value = await self.resolve_var_value(ctx, name, args, path)
+                    recipient = value if found else await self.replace_vars(ctx, token)
+            else:
+                recipient = await self.replace_vars(ctx, token)
+        else:
+            recipient = await self.replace_vars(ctx, token)
+        text = await self.replace_vars(ctx, message)
+        await send_dm(ctx, recipient, text)
 
 
 def _auto_id(prefix: str) -> str:

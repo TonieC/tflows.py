@@ -1,0 +1,11 @@
+on delete
+    sendto 143700000000000000 deleted: $content
+
+on edit
+    sendto 143700000000000000 before: $before after: $after
+
+on delete where user == 123456789012345678
+    sendto 143700000000000000 deleted by watched user: $content
+
+on error
+    sendto 143700000000000000 ERROR: $errormsg

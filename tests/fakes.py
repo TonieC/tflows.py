@@ -23,9 +23,17 @@ class FakeUser:
         self.display_avatar = type("A", (), {"url": f"https://example.com/{id}.png"})()
         self.roles = []
         self.guild_permissions = FakePermissions()
+        self.dms = []
 
     def __str__(self):
         return self.name
+
+    async def send(self, *args, **kwargs):
+        self.dms.append((args, kwargs))
+        return None
+
+    async def create_dm(self):
+        return self
 
 
 class FakeRole:
@@ -63,9 +71,9 @@ class FakeGuild:
 
 
 class FakeChannel:
-    def __init__(self, name="general", permissions=None):
+    def __init__(self, name="general", permissions=None, id=555):
         self.name = name
-        self.id = 555
+        self.id = id
         self.topic = "General discussion"
         self.nsfw = False
         self.type = "text"
@@ -76,6 +84,9 @@ class FakeChannel:
         self.sent = []
         self.purged = []
         self._permissions = permissions if permissions is not None else FakePermissions()
+
+    def __str__(self):
+        return self.name
 
     def permissions_for(self, user):
         return self._permissions
@@ -120,6 +131,10 @@ class FakeMessage:
         self.tts = False
         self.edited_at = None
         self.type = 0
+        self.id = 42
+
+    def __str__(self):
+        return self.content or ""
 
     async def reply(self, *args, **kwargs):
         self.replied.append((args, kwargs))

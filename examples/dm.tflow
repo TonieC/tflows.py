@@ -1,0 +1,5 @@
+command hello:
+    $dm $user Hello!
+
+command announce:
+    $dm $users Server maintenance starts soon.

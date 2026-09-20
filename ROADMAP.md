@@ -44,10 +44,13 @@ Priority: High
   - per-guild stats and health summaries
   - failure summaries for debugging
 
-## 1.3 — Data and automation primitives (shipped 2026-09-10)
+## 1.3 — Data and automation primitives (shipped 2026-09-20)
 
 Shipped in 1.3.0:
 
+- Delete/edit events (`delete` / `message_delete`, `edit` / `message_edit`)
+- `$before` / `$after` / `$errormsg`, `sendto` / `embedto`, `$dm`
+- Message logging in `.tflow` without custom Python
 - Mixed-unit durations (`1h 30m`, `500ms`, word units) across wait/cooldown/schedule/timeout
 - Developer knobs: `max_wait`, `max_repeat`, `max_clear`, HTTP timeouts, `config={...}`
 - `after` delayed blocks, `switch`/`case`, `choose`, `$config`, state `exists`/`keys`

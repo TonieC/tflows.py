@@ -44,6 +44,11 @@ EVENT_MAP = {
     "reaction_remove": "on_reaction_remove",
     "message": "on_message_event",
     "typing": "on_typing",
+    "delete": "on_message_delete",
+    "edit": "on_message_edit",
+    "message_delete": "on_message_delete",
+    "message_edit": "on_message_edit",
+    "error": "on_tflow_error",
     "button": "on_button",
     "select": "on_select",
     "modal": "on_modal",
@@ -139,10 +144,32 @@ class EventRegistry:
 def _bare_filter_value(ctx, name: str):
     """Resolve a bare identifier used in an event ``where`` clause."""
     extras = getattr(ctx, "extras", None) or {}
+    lowered = name.lower()
+    value = None
     if name in extras:
         value = extras[name]
+    else:
+        for key, item in extras.items():
+            if str(key).lower() == lowered:
+                value = item
+                break
+    if value is not None:
         from .runtime import stringify
 
+        if lowered in ("user", "author", "member"):
+            uid = getattr(value, "id", None)
+            if uid is not None:
+                return str(uid)
+            return stringify(value)
+        if lowered == "channel":
+            cname = getattr(value, "name", None)
+            if cname is not None:
+                return str(cname)
+            return stringify(value)
+        if lowered == "message":
+            return str(getattr(value, "content", extras.get("content", "")) or "")
+        if lowered == "content":
+            return stringify(value)
         return stringify(value)
     lowered = name.lower()
     if lowered == "channel":

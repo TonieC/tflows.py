@@ -61,6 +61,9 @@ bot.slashcommand(
 # --- Event triggers ----------------------------------------------------------
 bot.on_event("join", "send Welcome $user(mention)!")
 bot.on_event("react", "send $user(display) reacted!")
+bot.on_event("delete", "sendto 143700000000000000 deleted: $content")
+bot.on_event("edit", "sendto 143700000000000000 before: $before after: $after")
+bot.on_event("error", "sendto 143700000000000000 ERROR: $errormsg")
 
 # --- Locals, loops, script functions ----------------------------------------
 bot.command(
