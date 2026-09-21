@@ -6,6 +6,36 @@ All notable changes to tflows are documented here.
 
 No changes yet.
 
+## [1.3.0] - 2026-09-20
+
+Delete/edit events, targeted send, DMs, and script-visible errors. Existing 1.1/1.2 scripts stay compatible.
+
+### Added
+
+- **Delete / edit events**: `on delete` / `on message_delete` (`on_message_delete`)
+  and `on edit` / `on message_edit` (`on_message_edit`). Bot-authored messages
+  are ignored. `$message`, `$content`, `$before`, and `$after` are set for both.
+- **`$before` / `$after`**: old and new message content on edit; on delete,
+  `$before` is the deleted content and `$after` is empty.
+- **`sendto <channel_id> <text>`**: send to a channel by id (`get_channel`, then
+  `fetch_channel`). Invalid ids and API errors are logged and do not crash.
+- **`embedto <channel_id>` ... `endembed`**: same embed block syntax, routed to
+  another channel.
+- **`$errormsg`**: complete human-readable error from the current script run
+  (invalid function, argument, channel, ...). Cleared at the start of each run.
+  `on error` handlers can report it, e.g. `sendto ... ERROR: $errormsg`.
+- **`$dm <user-or-users> <message>`**: DM one user, a user id, a variable, or a
+  collection (`$users`). One failed recipient does not block the rest.
+- Delete/edit events work with existing `where` filters (`where user == Tester`).
+  Match numeric ids with `user_id` / `$user_id` (`where $user_id == 123...`).
+- Message logging can be implemented entirely in `.tflow` scripts (see
+  `examples/message_logger.tflow`).
+
+### Changed
+
+- Version **1.3.0**.
+- `where user` matches the user name (1.1/1.2). Filter by id with `user_id` or `$user_id`.
+
 ## [1.2.0] - 2026-09-10
 
 Flexible durations, developer knobs, and extra automation primitives.

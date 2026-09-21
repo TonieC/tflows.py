@@ -193,7 +193,10 @@ class FlowBot(commands.Bot):
         self.add_listener(self._tflow_on_reaction_add, "on_reaction_add")
         self.add_listener(self._tflow_on_reaction_remove, "on_reaction_remove")
         self.add_listener(self._tflow_on_typing, "on_typing")
+        self.add_listener(self._tflow_on_message_delete, "on_message_delete")
+        self.add_listener(self._tflow_on_message_edit, "on_message_edit")
         self.add_listener(self._tflow_on_interaction, "on_interaction")
+        self._last_errormsg = ""
 
     # ------------------------------------------------------------------
     # Persistent state (lazy so unused bots pay nothing)
@@ -419,6 +422,39 @@ class FlowBot(commands.Bot):
                 extras["user"] = author
                 extras["message"] = message
                 extras["content"] = getattr(message, "content", "") or ""
+                extras["channel"] = channel
+            elif listener == "on_message_delete":
+                (message,) = args
+                source_message = message
+                author = getattr(message, "author", None)
+                channel = fixed_channel or getattr(message, "channel", None)
+                guild = getattr(message, "guild", None)
+                content = getattr(message, "content", "") or ""
+                extras["user"] = author
+                extras["message"] = message
+                extras["content"] = content
+                extras["before"] = content
+                extras["after"] = ""
+                extras["channel"] = channel
+            elif listener == "on_message_edit":
+                before, after = args
+                source_message = after
+                author = getattr(after, "author", None) or getattr(before, "author", None)
+                channel = fixed_channel or getattr(after, "channel", None) or getattr(before, "channel", None)
+                guild = getattr(after, "guild", None) or getattr(before, "guild", None)
+                extras["user"] = author
+                extras["message"] = after
+                extras["content"] = getattr(after, "content", "") or ""
+                extras["before"] = getattr(before, "content", "") or ""
+                extras["after"] = getattr(after, "content", "") or ""
+                extras["channel"] = channel
+            elif listener == "on_tflow_error":
+                extras.update(args[0] if args and isinstance(args[0], dict) else {})
+                extras["_tflow_error_event"] = True
+                source_message = extras.get("message")
+                author = extras.get("user") or extras.get("author")
+                channel = fixed_channel or extras.get("channel")
+                guild = extras.get("guild")
         except Exception:
             logger.exception("[tflow] Failed to build event context for %s", listener)
         return FlowContext.for_event(
@@ -451,6 +487,17 @@ class FlowBot(commands.Bot):
         if getattr(user, "bot", False):
             return
         await self.dispatch_event("on_typing", channel, user, when)
+
+    async def _tflow_on_message_delete(self, message):
+        if getattr(getattr(message, "author", None), "bot", False):
+            return
+        await self.dispatch_event("on_message_delete", message)
+
+    async def _tflow_on_message_edit(self, before, after):
+        author = getattr(after, "author", None) or getattr(before, "author", None)
+        if getattr(author, "bot", False):
+            return
+        await self.dispatch_event("on_message_edit", before, after)
 
     async def _tflow_on_interaction(self, interaction):
         if getattr(getattr(interaction, "user", None), "bot", False):

@@ -114,6 +114,53 @@ def setup(registry):
             return stringify(extras["content"])
         return str(getattr(getattr(ctx, "message", None), "content", "") or "")
 
+    @registry.register_var("before")
+    def before_var(ctx, args):
+        extras = getattr(ctx, "extras", None) or {}
+        if "before" in extras:
+            return stringify(extras["before"])
+        return ""
+
+    @registry.register_var("after")
+    def after_var(ctx, args):
+        extras = getattr(ctx, "extras", None) or {}
+        if "after" in extras:
+            return stringify(extras["after"])
+        return ""
+
+    @registry.register_var("errormsg")
+    def errormsg_var(ctx, args):
+        extras = getattr(ctx, "extras", None) or {}
+        if extras.get("errormsg"):
+            return stringify(extras["errormsg"])
+        text = getattr(ctx, "last_error", "") or ""
+        if text:
+            return str(text)
+        bot = getattr(ctx, "bot", None)
+        if bot is not None and extras.get("_tflow_error_event"):
+            return str(getattr(bot, "_last_errormsg", "") or "")
+        return ""
+
+    @registry.register_var("users")
+    def users_var(ctx, args):
+        extras = getattr(ctx, "extras", None) or {}
+        if "users" in extras:
+            return extras["users"]
+        guild = getattr(ctx, "guild", None)
+        members = list(getattr(guild, "members", None) or [])
+        arg = (args or "").strip().lower()
+        if arg == "bots":
+            members = [m for m in members if getattr(m, "bot", False)]
+        elif arg in ("user", "users", "humans"):
+            members = [m for m in members if not getattr(m, "bot", False)]
+        return members
+
+    @registry.register_var("user_id")
+    def user_id_var(ctx, args):
+        extras = getattr(ctx, "extras", None) or {}
+        user = extras.get("user") or extras.get("author") or getattr(ctx, "author", None)
+        return str(getattr(user, "id", "") or "")
+
     @registry.register_var("input")
     def input_var(ctx, args):
         extras = getattr(ctx, "extras", None) or {}
