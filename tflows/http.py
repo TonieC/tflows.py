@@ -39,7 +39,7 @@ logger = logging.getLogger("tflows.http")
 _DEFAULT_TIMEOUT = 10
 _MAX_BODY = 1_000_000  # 1 MiB
 _ALLOWED_SCHEMES = {"https"}
-_USER_AGENT = "tflows/1.3 (+https://github.com/TonieC/tflows.py)"
+_USER_AGENT = "tflows/1.3.1 (+https://github.com/TonieC/tflows.py)"
 
 
 @dataclass

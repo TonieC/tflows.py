@@ -376,6 +376,18 @@ async def test_errormsg_unknown_function(bot):
     assert "not_a_real_fn" in out[0]
 
 
+async def test_errormsg_from_script_function(bot):
+    ctx = make_ctx(bot, message=FakeMessage(content="!t", client=bot))
+    await bot.engine.run(
+        ctx,
+        "function boom():\n    not_a_real_fn foo\nboom()\nsend ERR:$errormsg",
+    )
+    out = sent(ctx.channel)
+    assert out
+    assert "unknown function" in out[0].lower()
+    assert "not_a_real_fn" in out[0]
+
+
 async def test_errormsg_sendto_invalid_channel(bot):
     ctx = make_ctx(bot, message=FakeMessage(content="!t", client=bot))
     await bot.engine.run(ctx, "sendto nope x\nsend ERROR: $errormsg")

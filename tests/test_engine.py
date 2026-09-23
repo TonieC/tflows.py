@@ -167,6 +167,46 @@ async def test_run_embed_block_plain_text_fallback(bot):
     assert embed.description == "Just some description text"
 
 
+async def test_embed_invalid_color_is_controlled_error(bot):
+    message = FakeMessage(content="!t")
+    ctx = FlowContext(message=message, bot=bot)
+    await bot.engine.run(ctx, "embed\n$title[Hi]\n$color[not-a-color]\nendembed")
+    embed = message.channel.sent[0][1]["embed"]
+    assert embed.title == "Hi"
+    assert embed.color is None or getattr(embed.color, "value", None) in (None, 0)
+    assert ctx.last_error
+    assert "color" in ctx.last_error.lower()
+
+
+async def test_embed_out_of_range_color_is_controlled_error(bot):
+    message = FakeMessage(content="!t")
+    ctx = FlowContext(message=message, bot=bot)
+    await bot.engine.run(ctx, "embed\n$title[Hi]\n$color[1000000]\nendembed")
+    embed = message.channel.sent[0][1]["embed"]
+    assert embed.title == "Hi"
+    assert ctx.last_error
+    assert "color" in ctx.last_error.lower()
+
+
+async def test_embed_negative_color_is_controlled_error(bot):
+    message = FakeMessage(content="!t")
+    ctx = FlowContext(message=message, bot=bot)
+    await bot.engine.run(ctx, "embed\n$title[Hi]\n$color[-1]\nendembed")
+    assert ctx.last_error
+    assert "color" in ctx.last_error.lower()
+
+
+async def test_embed_valid_hex_and_bounds(bot):
+    message = FakeMessage(content="!t")
+    ctx = FlowContext(message=message, bot=bot)
+    await bot.engine.run(ctx, "embed\n$color[0]\nendembed")
+    assert message.channel.sent[0][1]["embed"].color.value == 0
+    await bot.engine.run(ctx, "embed\n$color[ffffff]\nendembed")
+    assert message.channel.sent[-1][1]["embed"].color.value == 0xFFFFFF
+    await bot.engine.run(ctx, "embed\n$color[#00ff00]\nendembed")
+    assert message.channel.sent[-1][1]["embed"].color.value == 0x00FF00
+
+
 async def test_run_embed_block_thumbnail_image_timestamp(bot):
     message = FakeMessage(content="!t")
     ctx = FlowContext(message=message, bot=bot)
