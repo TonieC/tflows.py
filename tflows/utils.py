@@ -48,9 +48,12 @@ def parse_color(value):
         return COLORS[raw]
 
     try:
-        return int(raw, 16)
+        parsed = int(raw, 16)
     except ValueError:
         return None
+    if parsed < 0 or parsed > 0xFFFFFF:
+        return None
+    return parsed
 
 
 _DURATION_UNITS = {

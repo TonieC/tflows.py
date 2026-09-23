@@ -34,6 +34,7 @@ from .runtime import ScriptFunction
 from .scheduler import Scheduler
 from .slash import build_slash_command, parse_slash_params
 from .state import StateStore
+from .utils import resolve_channel
 
 logger = logging.getLogger("tflows.bot")
 
@@ -319,12 +320,13 @@ class FlowBot(commands.Bot):
         only ``log``/variables still run.
         """
         if channel is not None and not hasattr(channel, "send"):
+            raw_id = channel
             resolved = None
             try:
                 resolved = self.get_channel(int(channel))
             except Exception:
                 resolved = None
-            channel = resolved
+            channel = resolved if resolved is not None else raw_id
         task = self.scheduler.schedule(name, code, interval=interval, cron=cron, channel=channel)
         try:
             loop = asyncio.get_running_loop()
@@ -351,10 +353,12 @@ class FlowBot(commands.Bot):
         destination. ``where`` is an optional filter expression.
         """
         if channel is not None and not hasattr(channel, "send"):
+            raw_id = channel
             try:
-                channel = self.get_channel(int(channel))
+                resolved = self.get_channel(int(channel))
             except Exception:
-                channel = None
+                resolved = None
+            channel = resolved if resolved is not None else raw_id
         handle = self.events.add(event, code, name=name, channel=channel, where=where)
         return handle
 
@@ -371,6 +375,9 @@ class FlowBot(commands.Bot):
             handle_name, code = entry[0], entry[1]
             fixed_channel = entry[2] if len(entry) > 2 else None
             where = entry[3] if len(entry) > 3 else None
+            if fixed_channel is not None and not hasattr(fixed_channel, "send"):
+                resolved, _err = await resolve_channel(self, fixed_channel)
+                fixed_channel = resolved
             ctx = self._event_context(listener, args, fixed_channel, command_name=handle_name)
             if where:
                 try:

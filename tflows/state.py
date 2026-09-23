@@ -215,7 +215,7 @@ class StateStore:
             return await asyncio.to_thread(_op)
         except Exception:
             logger.exception("[tflow] state incr failed for %r", key)
-            return delta
+            return None
 
     def close(self) -> None:
         try:

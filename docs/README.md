@@ -5,6 +5,10 @@
 - [ROADMAP](../ROADMAP.md) — planned work
 - [1.2 technical spec](v1.2-technical-spec.md)
 
+## 1.3.1
+
+Patch: `incr` failure semantics, `show_modal`/`defer` errors, embed color validation, component isolation in script functions, and delayed channel-id resolution for events/schedules.
+
 ## 1.3.0
 
 Delete/edit events, `sendto` / `embedto`, `$dm`, `$before` / `$after` / `$errormsg`.

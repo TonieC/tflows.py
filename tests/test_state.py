@@ -134,3 +134,55 @@ async def test_state_in_prefix_command(bot):
     message2 = FakeMessage(content="!add", client=bot, author=FakeUser(id=777, name="Other"))
     await bot.on_message(message2)
     assert sent_text(message2) == ["5"]  # per-user key, fresh counter
+
+
+async def test_incr_sqlite_failure_does_not_look_like_success():
+    import sqlite3
+
+    store = StateStore(":memory:")
+    await store.set("g", "counter", 10)
+    inner = store._conn
+
+    class FailingConn:
+        def execute(self, *args, **kwargs):
+            raise sqlite3.OperationalError("disk I/O error")
+
+        def commit(self):
+            return inner.commit()
+
+        def close(self):
+            return inner.close()
+
+    store._conn = FailingConn()
+    result = await store.incr("g", "counter", 5)
+    store._conn = inner
+    try:
+        assert result is None
+        assert await store.get("g", "counter") == "10"
+    finally:
+        store.close()
+
+
+async def test_incr_script_failure_sets_errormsg(bot):
+    import sqlite3
+
+    inner = bot.state._conn
+
+    class FailingConn:
+        def execute(self, *args, **kwargs):
+            raise sqlite3.OperationalError("disk I/O error")
+
+        def commit(self):
+            return inner.commit()
+
+        def close(self):
+            return inner.close()
+
+    bot.state._conn = FailingConn()
+    try:
+        message = await run(bot, "incr counter 5\nsend [$errormsg]")
+        assert sent_text(message)
+        assert "incr" in sent_text(message)[0].lower() or "fail" in sent_text(message)[0].lower()
+        assert sent_text(message)[0] != "[5]"
+    finally:
+        bot.state._conn = inner

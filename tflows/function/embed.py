@@ -2,6 +2,7 @@ import re
 
 import discord
 
+from ..context import record_error
 from ..engine import Engine
 from ..utils import parse_color
 
@@ -64,6 +65,8 @@ def setup(registry):
                 color = parse_color(resolved)
                 if color is not None:
                     e.color = discord.Color(color)
+                elif resolved and str(resolved).strip():
+                    record_error(ctx, f"invalid embed color: {resolved}")
             elif key == "thumbnail":
                 e.set_thumbnail(url=resolved)
             elif key == "image":

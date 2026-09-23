@@ -22,6 +22,8 @@ Inline reads: ``$get(points)`` or ``$get(points, 0)``.
 
 import re
 
+from ..context import record_error
+
 _INCR_RE = re.compile(r"^[+-]\d+(?:\.\d+)?$")
 
 
@@ -61,7 +63,11 @@ def setup(registry):
         namespace, key = _scope(ctx, key)
         if _INCR_RE.match(value.strip()):
             delta = float(value.strip())
-            await store.incr(namespace, key, int(delta) if delta.is_integer() else delta)
+            result = await store.incr(
+                namespace, key, int(delta) if delta.is_integer() else delta
+            )
+            if result is None:
+                record_error(ctx, f"failed to increment {key}")
         else:
             await store.set(namespace, key, value)
 
@@ -100,9 +106,11 @@ def setup(registry):
         except ValueError:
             delta = 1
         namespace, key = _scope(ctx, parts[0])
-        await _store(ctx).incr(
+        result = await _store(ctx).incr(
             namespace, key, int(delta) if float(delta).is_integer() else delta
         )
+        if result is None:
+            record_error(ctx, f"failed to increment {parts[0]}")
 
     @registry.register_var("get")
     async def get_var(ctx, args):

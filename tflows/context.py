@@ -120,9 +120,9 @@ class FlowContext:
             interaction=self.interaction,
             filename=self.filename,
         )
-        child.pending_view = self.pending_view
-        child.pending_components = self.pending_components
-        child.pending_modal = self.pending_modal
+        child.pending_view = None
+        child.pending_components = []
+        child.pending_modal = None
         child.component_handlers = self.component_handlers
         child.ephemeral = self.ephemeral
         child.deferred = self.deferred

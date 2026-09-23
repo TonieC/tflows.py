@@ -140,3 +140,40 @@ async def test_on_event_with_channel_id_does_not_crash(bot):
     member = FakeUser(id=22, name="NoChan")
     member.guild = FakeGuild()
     await bot.dispatch_event("on_member_join", member)  # NullChannel absorbs it
+
+
+async def test_on_event_channel_id_resolves_when_later_cached(bot):
+    dest = FakeChannel(name="inbox", id=99)
+    cache = {}
+
+    def get_channel(cid):
+        return cache.get(int(cid))
+
+    bot.get_channel = get_channel
+    bot.on_event("join", "send hello", channel=99)
+    cache[99] = dest
+    member = FakeUser(id=22, name="Later")
+    member.guild = FakeGuild()
+    await bot.dispatch_event("on_member_join", member)
+    assert dest.sent == [(("hello",), {})]
+
+
+async def test_schedule_channel_id_resolves_when_later_cached(bot):
+    dest = FakeChannel(name="inbox", id=77)
+    cache = {}
+
+    def get_channel(cid):
+        return cache.get(int(cid))
+
+    async def fetch_channel(cid):
+        return cache.get(int(cid))
+
+    bot.get_channel = get_channel
+    bot.fetch_channel = fetch_channel
+    task = bot.schedule("tick", "send hi", interval=60, channel=77)
+    try:
+        cache[77] = dest
+        await bot.scheduler.run_once("tick")
+        assert dest.sent == [(("hi",), {})]
+    finally:
+        await task.stop()

@@ -6,6 +6,18 @@ All notable changes to tflows are documented here.
 
 No changes yet.
 
+## [1.3.1] - 2026-09-23
+
+Patch release. Existing 1.3 scripts stay compatible.
+
+### Fixed
+
+- **`incr` / `set +N`**: SQLite failures no longer return the delta as if the increment succeeded. Callers get `None` and scripts can observe the failure via `$errormsg` / `on error`.
+- **`show_modal` / `defer`**: Discord API and interaction failures are no longer swallowed. They set `$errormsg` and trigger `on error` without leaking raw API details. A failed defer no longer leaves `ctx.deferred` true.
+- **Embed colors**: out-of-range and malformed colors (`-1`, values above `0xFFFFFF`, non-hex) produce a controlled tflows error instead of an invalid Discord color. `0` and `ffffff` still work.
+- **Script functions**: child contexts no longer share `pending_components` / `pending_view` with the parent, so nested function buttons do not leak onto the parent's next send. Function errors now copy to the parent `$errormsg`.
+- **Events / schedules**: a channel id that was not cached at registration is kept and resolved later (`get_channel`, then `fetch_channel`) instead of becoming permanently unusable.
+
 ## [1.3.0] - 2026-09-20
 
 Delete/edit events, targeted send, DMs, and script-visible errors. Existing 1.1/1.2 scripts stay compatible.

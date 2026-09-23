@@ -5,7 +5,12 @@ registered by :func:`tflows.loader.load_function` through ``setup(registry)``
 alongside the feature modules.
 """
 
+import logging
+
+from .context import record_error
 from .runtime import access_path, stringify
+
+logger = logging.getLogger("tflows.builtins")
 
 
 def _extra(ctx, name, args=""):
@@ -208,7 +213,8 @@ def setup(registry):
                 )
             await interaction.response.send_modal(modal)
         except Exception:
-            pass
+            logger.exception("[tflow] Failed to show modal")
+            record_error(ctx, "failed to show modal")
 
     @registry.register("ephemeral")
     async def ephemeral_fn(ctx, args):
@@ -217,12 +223,15 @@ def setup(registry):
 
     @registry.register("defer")
     async def defer_fn(ctx, args):
-        ctx.deferred = True
         interaction = getattr(ctx, "interaction", None)
         if interaction is None:
+            ctx.deferred = True
             return
         ephemeral = "ephemeral" in (args or "").lower() or getattr(ctx, "ephemeral", False)
         try:
             await interaction.response.defer(ephemeral=ephemeral)
+            ctx.deferred = True
         except Exception:
-            pass
+            logger.exception("[tflow] Failed to defer interaction")
+            ctx.deferred = False
+            record_error(ctx, "failed to defer interaction")

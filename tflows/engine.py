@@ -258,7 +258,7 @@ class Engine:
         match = re.search(rf"\${key}\[(.*?)\]", block, re.DOTALL)
         return match.group(1).strip() if match else None
 
-    def _apply_embed(self, embed, key, value):
+    def _apply_embed(self, embed, key, value, ctx=None):
         """Apply a resolved embed directive to a discord.Embed instance."""
         key = key.lower()
 
@@ -283,6 +283,8 @@ class Engine:
             color = parse_color(value)
             if color is not None:
                 embed.color = discord.Color(color)
+            elif value is not None and str(value).strip():
+                record_error(ctx, f"invalid embed color: {value}")
             return
 
         if key == "thumbnail":
@@ -318,7 +320,7 @@ class Engine:
             if key == "timestamp":
                 embed.timestamp = ctx.message.created_at
             else:
-                self._apply_embed(embed, key, resolved)
+                self._apply_embed(embed, key, resolved, ctx)
 
         if not values.get("desc") and clean:
             embed.description = await self.replace_vars(ctx, clean)
@@ -744,6 +746,10 @@ class Engine:
                         if log_errors:
                             logger.exception("[tflow] Failed to render embed block")
                         await self._emit_error(ctx, msg)
+                    else:
+                        if getattr(ctx, "_error_pending", False):
+                            ctx._error_pending = False
+                            await self._emit_error(ctx, getattr(ctx, "last_error", "") or "")
                 i += 1
                 continue
 
@@ -1059,13 +1065,19 @@ class Engine:
             bound[param] = arg_values[index] if index < len(arg_values) else ""
         child = ctx.child(**bound)
         self._fn_depth += 1
+        result = ""
         try:
             await self._run_lines(child, (fn.body or "").split("\n"))
         except FlowReturn as ret:
-            return ret.value
+            result = ret.value
+        else:
+            result = child.return_value if child.return_value is not None else ""
         finally:
             self._fn_depth -= 1
-        return child.return_value if child.return_value is not None else ""
+            err = getattr(child, "last_error", "") or ""
+            if err:
+                ctx.last_error = err
+        return result
 
     async def _run_for(self, ctx, var_name, iterable_expr, body, log_errors):
         resolved = await self._eval_rhs(ctx, iterable_expr)
@@ -1273,9 +1285,9 @@ class Engine:
         bot.bind_component(kind, custom_id, code)
 
     async def _handle_defer(self, ctx, stripped):
-        ctx.deferred = True
         interaction = getattr(ctx, "interaction", None)
         if interaction is None:
+            ctx.deferred = True
             return
         ephemeral = "ephemeral" in stripped.lower()
         try:
@@ -1283,8 +1295,11 @@ class Engine:
             defer = getattr(response, "defer", None)
             if callable(defer):
                 await defer(ephemeral=ephemeral)
+            ctx.deferred = True
         except Exception:
             logger.exception("[tflow] Failed to defer interaction")
+            ctx.deferred = False
+            await self._emit_error(ctx, "failed to defer interaction")
 
     async def _handle_import(self, ctx, target):
         from .scripts import import_script

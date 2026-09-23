@@ -97,6 +97,57 @@ async def test_schedule_replaces_duplicate(bot):
         await t2.stop()
 
 
+async def test_schedule_replace_stops_old_task(bot):
+    channel = FakeChannel()
+    t1 = bot.schedule("dup", "send old", interval=0.05, channel=channel)
+    await asyncio.sleep(0.12)
+    t2 = bot.schedule("dup", "send new", interval=0.05, channel=channel)
+    await asyncio.sleep(0.18)
+    try:
+        texts = [args[0] for args, _ in channel.sent if args]
+        assert "old" in texts
+        assert "new" in texts
+        assert t1.running is False
+        after = [t for t in texts if t == "old"]
+        extra = len(texts)
+        await asyncio.sleep(0.12)
+        later = [args[0] for args, _ in channel.sent if args]
+        assert later.count("old") == len(after)
+        assert extra < len(later) or later.count("new") >= texts.count("new")
+    finally:
+        await t1.stop()
+        await t2.stop()
+
+
+async def test_schedule_replace_while_running_cancels_old(bot):
+    channel = FakeChannel()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    @bot.engine.registry.register("hold")
+    async def hold(ctx, args):
+        entered.set()
+        await release.wait()
+        await ctx.channel.send("old-after")
+
+    try:
+        t1 = bot.schedule("dup", "hold", interval=0.02, channel=channel)
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        t2 = bot.schedule("dup", "send new-task", interval=60, channel=channel)
+        release.set()
+        await asyncio.sleep(0.05)
+        texts = [args[0] for args, _ in channel.sent if args]
+        assert "old-after" not in texts
+        assert t1.running is False
+        await bot.scheduler.run_once("dup")
+        texts = [args[0] for args, _ in channel.sent if args]
+        assert texts.count("new-task") == 1
+    finally:
+        bot.engine.registry.unregister("hold")
+        await t1.stop()
+        await t2.stop()
+
+
 async def test_unschedule(bot):
     bot.schedule("gone", "send x", interval=60)
     assert bot.unschedule("gone") is True

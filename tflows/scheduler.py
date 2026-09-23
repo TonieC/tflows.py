@@ -187,6 +187,7 @@ class ScheduledTask:
 
     async def run_once(self) -> None:
         from .context import FlowContext
+        from .utils import resolve_channel
 
         bot = self.bot
         if bot is None or self._running:
@@ -198,7 +199,11 @@ class ScheduledTask:
         try:
             while True:
                 try:
-                    ctx = FlowContext.for_scheduler(bot, self.channel, command_name=self.name)
+                    channel = self.channel
+                    if channel is not None and not hasattr(channel, "send"):
+                        resolved, _err = await resolve_channel(bot, channel)
+                        channel = resolved
+                    ctx = FlowContext.for_scheduler(bot, channel, command_name=self.name)
                     await bot.engine.run(ctx, self.code)
                     self.runs += 1
                     self.failures = 0
